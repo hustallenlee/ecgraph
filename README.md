@@ -1,5 +1,5 @@
 # ecgraph
-This is a distributed graph processing engine based on mpi, and it needs further modification so do not clone it although it can run. And Makefile will be added in the further
+This is a distributed graph processing engine based on mpi, and it needs further modification so do not clone it although it can run. And Makefile will be added in the future
 ##dependency 
 (This program depends on below, and it works well in other versions)
 * mpich 3.2
