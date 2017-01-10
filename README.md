@@ -9,7 +9,7 @@ This is a distributed graph processing engine based on mpi, and it needs further
 
 ## Run
 
-** mpiexec -f machinefile ./bin/algorithm graph_data iterations
+**mpiexec -f machinefile ./bin/algorithm graph_data iterations**
 
 > algorithm is a graph algorithm compiled by mpic++
 
