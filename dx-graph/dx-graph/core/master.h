@@ -1,5 +1,5 @@
-﻿#ifndef _CONTROLLER_H_
-#define _CONTROLLER_H_
+﻿#ifndef _MASTER_H_
+#define _MASTER_H_
 //控制节点代码，控制节点是整个图计算的中枢，控制节点主要负责
 //1.第一阶段图数据的分发，将edge list 根据图的一些相关信息进行分发
 //2.图处理迭代的进行，图迭代完成之后要将自身迭代的消息发送给控制节点
@@ -37,16 +37,16 @@ using namespace boost;
 //提供底层网络通信抽象，封装了底层数据传输，控制信息
 
 
-class controller {
+class master {
 public:
-	controller(int argc,
+	master(int argc,
 		char **argv,
 		int world_size, //当前集群中参与图处理节点的总数
 		int self_rank,
 		ecgraph::consistent_hash *ring/*,
 		ecgraph::buffer<ecgraph::edge_t> *graphfile_buffer*/
 		);
-	controller() = delete;
+	master() = delete;
 
 	//typedef format::vertex_t mpi_transport_datatype_t;
 
@@ -70,32 +70,32 @@ public:
 	
 	//发送结束信息
 	void end_all();
-	void controller_start();
+	void master_start();
 	void go();
-	void set_all_compute_node_state(NODE_STATE state);
+	void set_all_worker_state(NODE_STATE state);
 	//消息以json的形式发过来
-	void recv_msg_from_compute_node();
+	void recv_msg_from_worker();
 
 	void broadcast_msg_to_all(base_message * msg);
 
 	void start() {
-		//auto f_send = std::bind(&controller::send, this);
-		//auto f_recv = std::bind(&controller::send, this);
+		//auto f_send = std::bind(&master::send, this);
+		//auto f_recv = std::bind(&master::send, this);
 		//send_thrd = new std::thread(f_send);
 		//recv_thrd = new std::thread(f_recv);
-		//controller_start();
+		//master_start();
 		m_graphfile_buffer->start_write(m_graph_filename);
 		go();
 	}
-	void process_compute_node_info();
-	bool check_compute_node_run_info();
+	void process_worker_info();
+	bool check_worker_run_info();
 
 	//=============消息处理相关=======================================
 	int get_message_id(ecgraph::byte_t *buf, int len);
-	void handle_message(compute_node_runtime_info_msg &msg);
-	void handle_message(compute_node_stop_send_update_msg &msg);
+	void handle_message(worker_runtime_info_msg &msg);
+	void handle_message(worker_stop_send_update_msg &msg);
 	//===============================================================
-	~controller() {
+	~master() {
 		/*if (send_thrd) {
 			if (send_thrd->joinable()) {
 				send_thrd->join();
@@ -153,13 +153,13 @@ private:
 	message_factory m_message_factory;
 
 	//记录每轮迭代各计算节点的运行信息
-	std::map<ecgraph::vertex_t, compute_node_run_info_t> m_run_info;
+	std::map<ecgraph::vertex_t, worker_run_info_t> m_run_info;
 	int m_max_loop;
 	int m_current_loop;
 	std::map<ecgraph::vertex_t, bool> m_machine_is_stop;
 };
 
-controller::controller(int argc,
+master::master(int argc,
 	char **argv,
 	int world_size, //当前集群中参与图处理节点的总数
 	int self_rank,
@@ -170,15 +170,15 @@ controller::controller(int argc,
 	m_argv = argv;
 	m_world_size = world_size;
 	m_rank = self_rank;
-	m_node_type = NODE_TYPE::CONTROLL_NODE;
+	m_node_type = NODE_TYPE::MASTER_NODE;
 	m_node_state = NODE_STATE::BEFORE_START;	//初始化状态
 	m_ring = ring;
 	m_graphfile_buffer = new ecgraph::buffer<ecgraph::edge_t>(GRAPH_DATA_BUFFER_SIZE);
 
-	m_size = m_ring->compute_size() + 1;
+	m_size = m_ring->worker_size() + 1;
 	m_state_mutex = new std::mutex();
 	
-	m_ring->get_machines(m_machines);//得到所有的计算节点
+	m_ring->get_workers(m_machines);//得到所有的计算节点
 	m_max_loop = std::stoi(argv[2]);
 	m_current_loop = 0;
 	m_graph_filename = argv[1];
@@ -186,7 +186,7 @@ controller::controller(int argc,
 
 
 
-void controller::sync_ring_info() {
+void master::sync_ring_info() {
 
 	//只能在一下几个状态中调用
 	assert(m_node_state == NODE_STATE::BEFORE_START
@@ -199,7 +199,7 @@ void controller::sync_ring_info() {
 }
 
 
-void controller::send_controll_msg(std::string json_msg, int rank)
+void master::send_controll_msg(std::string json_msg, int rank)
 {
 	//判断rank的合法性
 	//存计算节点的rank值
@@ -214,14 +214,14 @@ void controller::send_controll_msg(std::string json_msg, int rank)
 	
 }
 
-void controller::send_controll_msg(base_message * msg, int rank)
+void master::send_controll_msg(base_message * msg, int rank)
 {
 	std::string json_msg = msg->serialize();
 	send_controll_msg(json_msg, rank);
 }
 
 
-void controller::send_to_all_node(void * buf, int count, int tag) {
+void master::send_to_all_node(void * buf, int count, int tag) {
 
 	//获得计算节点的数量
 	const int COMPUTE_SIZE = m_machines.size();
@@ -257,7 +257,7 @@ void controller::send_to_all_node(void * buf, int count, int tag) {
 	delete [] reqs;
 
 }
-void controller::end_all()
+void master::end_all()
 {
 	//只能在一下几个状态中调用
 	//assert(m_node_state == NODE_STATE::BEFORE_START
@@ -268,7 +268,7 @@ void controller::end_all()
 	send_to_all_node((void *)buf, sizeof(buf), END_TAG);
 }
 
-void controller::send_partition_info() {
+void master::send_partition_info() {
 	//只能在一下几个状态中调用
 	assert(m_node_state == NODE_STATE::BEFORE_START
 		|| m_node_state == NODE_STATE::DISTRIBUTING_GRAHP
@@ -322,7 +322,7 @@ void controller::send_partition_info() {
 				std::to_string(-1));
 		}
 		catch (boost::property_tree::ptree_bad_path) {
-			LOG_TRIVIAL(error) << "[controller][sync_partition_info] bad path";
+			LOG_TRIVIAL(error) << "[master][sync_partition_info] bad path";
 			return;
 		}
 		std::stringstream ss2;
@@ -343,11 +343,11 @@ void controller::send_partition_info() {
 
 
 
-void controller::distributing_graph() {
+void master::distributing_graph() {
 
 	//断言，当前状态只能为 DISTRIBUTING_GRAHP，且为控制节点
 	assert(m_node_state == NODE_STATE::DISTRIBUTING_GRAHP
-		&& m_node_type == NODE_TYPE::CONTROLL_NODE);
+		&& m_node_type == NODE_TYPE::MASTER_NODE);
 
 	//获得计算节点的数量
 	const int COMPUTE_SIZE = m_machines.size();
@@ -364,7 +364,7 @@ void controller::distributing_graph() {
 		index_to_machine[i] = m_machines[i];
 	}
 	#ifdef MY_DEBUG
-	LOG_TRIVIAL(info) <<"controller(" <<m_rank << ") distributing graph data";
+	LOG_TRIVIAL(info) <<"master(" <<m_rank << ") distributing graph data";
 	#endif
 
 	//申请内存作为本机发送缓存
@@ -375,7 +375,7 @@ void controller::distributing_graph() {
 		read_buf = new ecgraph::edge_t[READ_GRAPH_DATA_ONCE];
 	}
 	catch (std::bad_alloc) {
-		LOG_TRIVIAL(error) << "[controller][distributing_graph] alloc memory for read buffer failed";
+		LOG_TRIVIAL(error) << "[master][distributing_graph] alloc memory for read buffer failed";
 		exit(0);
 	}
 	
@@ -383,7 +383,7 @@ void controller::distributing_graph() {
 		send_buf = new ecgraph::edge_t *[COMPUTE_SIZE];
 	}
 	catch (std::bad_alloc) {
-		LOG_TRIVIAL(error) << "[controller][distributing_graph] alloc memory for send buffer failed";
+		LOG_TRIVIAL(error) << "[master][distributing_graph] alloc memory for send buffer failed";
 		exit(0);
 	}
 
@@ -393,7 +393,7 @@ void controller::distributing_graph() {
 			send_buf[i] = new ecgraph::edge_t[GRAPH_DATA_BUFFER_SIZE];
 		}
 		catch (std::bad_alloc){
-			LOG_TRIVIAL(error) << "[controller][distributing_graph] alloc memory for send buffer["<<i<<"] failed";
+			LOG_TRIVIAL(error) << "[master][distributing_graph] alloc memory for send buffer["<<i<<"] failed";
 			exit(0);
 		}
 	}
@@ -405,7 +405,7 @@ void controller::distributing_graph() {
 		int readed_num = m_graphfile_buffer->read(read_buf, READ_GRAPH_DATA_ONCE);
 		
 		/*#ifdef MY_DEBUG
-		LOG_TRIVIAL(info) << "controller(" << m_rank << ") readed "<<readed_num<<" edges";
+		LOG_TRIVIAL(info) << "master(" << m_rank << ") readed "<<readed_num<<" edges";
 		#endif*/
 
 		//将的数据放到对应的发送缓存中,根据边的src进行划分
@@ -470,29 +470,29 @@ void controller::distributing_graph() {
 
 
 
-void controller::handle_graph_controll_data(ecgraph::byte_t * buf, int len)
+void master::handle_graph_controll_data(ecgraph::byte_t * buf, int len)
 {
-/*LOG_TRIVIAL(info) << "controller(" << m_rank << ") TEST";
+/*LOG_TRIVIAL(info) << "master(" << m_rank << ") TEST";
 		while (1) {}*/
 	int msg_id = get_message_id(buf, len);
 	if (msg_id < 0 || !(msg_id >= 0 && msg_id < 1000)) {
-		LOG_TRIVIAL(warn) << "bad message while dealing with the message from compute node";
+		LOG_TRIVIAL(warn) << "bad message while dealing with the message from worker";
 		return;
 	}
 	
-	if (msg_id == COMPUTE_NODE_RUNTIME_INFO_MSGID) {
+	if (msg_id == WORKER_RUNTIME_INFO_MSGID) {
 
 		//只能在这个状态接收该消息
 		assert(m_node_state == NODE_STATE::BETWEEN_TWO_ITERATION);
-		compute_node_runtime_info_msg msg;
+		worker_runtime_info_msg msg;
 		msg.load(std::string((char *)buf, len));
 		handle_message(msg);
 	}
-	else if (msg_id == COMPUTE_NODE_STOP_SEND_UPDATE_MSGID) {
+	else if (msg_id == WORKER_STOP_SEND_UPDATE_MSGID) {
 		//只能在这个状态接收该消息
-		//LOG_TRIVIAL(info) << "controller(" << m_rank << ") received stop send update msg";
+		//LOG_TRIVIAL(info) << "master(" << m_rank << ") received stop send update msg";
 		assert(m_node_state == NODE_STATE::IN_ITERATION);
-		compute_node_stop_send_update_msg msg;
+		worker_stop_send_update_msg msg;
 		msg.load(std::string((char *)buf, len));
 		
 		handle_message(msg);
@@ -503,7 +503,7 @@ void controller::handle_graph_controll_data(ecgraph::byte_t * buf, int len)
 
 
 
-void controller::controller_start() {
+void master::master_start() {
 	bool go_on = true;
 	while (go_on) { //状态不为未完成，则继续
 		switch (get_current_state()) {
@@ -512,7 +512,7 @@ void controller::controller_start() {
 			case NODE_STATE::BEFORE_START:
 			{
 				#ifdef MY_DEBUG
-				LOG_TRIVIAL(info) << "controller(" << m_rank << ") in BEFORE_START";
+				LOG_TRIVIAL(info) << "master(" << m_rank << ") in BEFORE_START";
 				#endif
 
 				//同步ring环信息
@@ -524,7 +524,7 @@ void controller::controller_start() {
 				//改变状态
 				set_current_state(NODE_STATE::DISTRIBUTING_GRAHP);
 				#ifdef MY_DEBUG
-				LOG_TRIVIAL(info) << "controller(" << m_rank << ") out BEFORE_START";
+				LOG_TRIVIAL(info) << "master(" << m_rank << ") out BEFORE_START";
 				#endif
 				break;
 			}
@@ -534,12 +534,12 @@ void controller::controller_start() {
 			case NODE_STATE::DISTRIBUTING_GRAHP:
 			{
 				#ifdef MY_DEBUG
-				LOG_TRIVIAL(info) << "controller(" << m_rank << ") in DISTRIBUTING_GRAHP";
+				LOG_TRIVIAL(info) << "master(" << m_rank << ") in DISTRIBUTING_GRAHP";
 				#endif
 				distributing_graph();
 				set_current_state(NODE_STATE::FINISH_DISTRIBUTED_GRAPH);
 				#ifdef MY_DEBUG
-				LOG_TRIVIAL(info) << "controller(" << m_rank << ") out DISTRIBUTING_GRAHP";
+				LOG_TRIVIAL(info) << "master(" << m_rank << ") out DISTRIBUTING_GRAHP";
 				#endif
 				break;
 			}
@@ -548,7 +548,7 @@ void controller::controller_start() {
 			case NODE_STATE::FINISH_DISTRIBUTED_GRAPH:
 			{	
 				#ifdef MY_DEBUG
-				LOG_TRIVIAL(info) << "controller(" << m_rank << ") in FINISH_DISTRIBUTED_GRAPH";
+				LOG_TRIVIAL(info) << "master(" << m_rank << ") in FINISH_DISTRIBUTED_GRAPH";
 				#endif
 
 				
@@ -556,7 +556,7 @@ void controller::controller_start() {
 				//进入IN_ITERATION
 				set_current_state(NODE_STATE::IN_ITERATION);
 				#ifdef MY_DEBUG
-				LOG_TRIVIAL(info) << "controller(" << m_rank << ") out FINISH_DISTRIBUTED_GRAPH";
+				LOG_TRIVIAL(info) << "master(" << m_rank << ") out FINISH_DISTRIBUTED_GRAPH";
 				#endif
 				break;
 			}
@@ -565,19 +565,19 @@ void controller::controller_start() {
 			case NODE_STATE::IN_ITERATION:
 			{	
 				#ifdef MY_DEBUG
-				LOG_TRIVIAL(info) << "controller(" << m_rank << ") in IN_ITERATION";
+				LOG_TRIVIAL(info) << "master(" << m_rank << ") in IN_ITERATION";
 				#endif
 				//发送给所有的计算节点一个控制信息，使其开始进行迭代, 
 				//计算节点收到该消息后进入IN_ITERATION状态，并开始迭代
-				controller_permit_start_msg *msg = new controller_permit_start_msg();
-				msg->set_controller_id(m_rank);
+				master_permit_start_msg *msg = new master_permit_start_msg();
+				msg->set_master_id(m_rank);
 				broadcast_msg_to_all(msg);
 				delete msg;
 
 				//进入BETWEEN_TWO_ITERATION状态
 				set_current_state(NODE_STATE::BETWEEN_TWO_ITERATION);
 				#ifdef MY_DEBUG
-				LOG_TRIVIAL(info) << "controller(" << m_rank << ") out IN_ITERATION";
+				LOG_TRIVIAL(info) << "master(" << m_rank << ") out IN_ITERATION";
 				#endif
 				break;
 			}
@@ -587,7 +587,7 @@ void controller::controller_start() {
 			{
 				
 				//等待计算节点将自己一轮迭代的一些运行消息发送过来。
-				recv_msg_from_compute_node();
+				recv_msg_from_worker();
 				break;
 			}
 				//完成迭代
@@ -599,14 +599,14 @@ void controller::controller_start() {
 			case NODE_STATE::FINISH_ALL:
 			{	
 				#ifdef MY_DEBUG
-				LOG_TRIVIAL(info) << "controller(" << m_rank << ") in FINISH_ALL";
+				LOG_TRIVIAL(info) << "master(" << m_rank << ") in FINISH_ALL";
 				#endif
 				end_all();
 				#ifdef MY_DEBUG
-				LOG_TRIVIAL(info) << "controller(" << m_rank << ") end all";
+				LOG_TRIVIAL(info) << "master(" << m_rank << ") end all";
 				#endif
 				#ifdef MY_DEBUG
-				LOG_TRIVIAL(info) << "controller(" << m_rank << ") out FINISH_ALL";
+				LOG_TRIVIAL(info) << "master(" << m_rank << ") out FINISH_ALL";
 				#endif
 				go_on = false;
 				break;
@@ -615,7 +615,7 @@ void controller::controller_start() {
 	}
 }
 
-void controller::go()
+void master::go()
 {
 	bool go_on = true;
 	while (go_on) { //状态不为未完成，则继续
@@ -625,7 +625,7 @@ void controller::go()
 			case NODE_STATE::BEFORE_START:
 			{
 				#ifdef MY_DEBUG
-				LOG_TRIVIAL(info) << "controller(" << m_rank << ") in BEFORE_START";
+				LOG_TRIVIAL(info) << "master(" << m_rank << ") in BEFORE_START";
 				#endif
 
 				//同步ring环信息
@@ -638,10 +638,10 @@ void controller::go()
 				set_current_state(NODE_STATE::DISTRIBUTING_GRAHP);
 
 				//设置设置计算节点状态
-				set_all_compute_node_state(NODE_STATE::DISTRIBUTING_GRAHP);
+				set_all_worker_state(NODE_STATE::DISTRIBUTING_GRAHP);
 
 				#ifdef MY_DEBUG
-				LOG_TRIVIAL(info) << "controller(" << m_rank << ") out BEFORE_START";
+				LOG_TRIVIAL(info) << "master(" << m_rank << ") out BEFORE_START";
 				#endif
 				break;
 			}
@@ -651,14 +651,14 @@ void controller::go()
 			case NODE_STATE::DISTRIBUTING_GRAHP:
 			{
 				#ifdef MY_DEBUG
-				LOG_TRIVIAL(info) << "controller(" << m_rank << ") in DISTRIBUTING_GRAHP";
+				LOG_TRIVIAL(info) << "master(" << m_rank << ") in DISTRIBUTING_GRAHP";
 				#endif
 				distributing_graph();
 				set_current_state(NODE_STATE::FINISH_DISTRIBUTED_GRAPH);
 				//设置设置计算节点状态
-				set_all_compute_node_state(NODE_STATE::FINISH_DISTRIBUTED_GRAPH);
+				set_all_worker_state(NODE_STATE::FINISH_DISTRIBUTED_GRAPH);
 				#ifdef MY_DEBUG
-				LOG_TRIVIAL(info) << "controller(" << m_rank << ") out DISTRIBUTING_GRAHP";
+				LOG_TRIVIAL(info) << "master(" << m_rank << ") out DISTRIBUTING_GRAHP";
 				#endif
 				break;
 			}
@@ -667,20 +667,20 @@ void controller::go()
 			case NODE_STATE::FINISH_DISTRIBUTED_GRAPH:
 			{
 				#ifdef MY_DEBUG
-				LOG_TRIVIAL(info) << "controller(" << m_rank << ") in FINISH_DISTRIBUTED_GRAPH";
+				LOG_TRIVIAL(info) << "master(" << m_rank << ") in FINISH_DISTRIBUTED_GRAPH";
 				#endif
 				//发送一条消息，表示最大迭代次数
-				/*controller_send_max_loop_msg *msg = new controller_send_max_loop_msg();
-				msg->set_controller_id(m_rank);
+				/*master_send_max_loop_msg *msg = new master_send_max_loop_msg();
+				msg->set_master_id(m_rank);
 				msg->set_max_loop(m_max_loop);
 				broadcast_msg_to_all(msg);
 				delete msg;*/
 
 				//进入IN_ITERATION
-				set_all_compute_node_state(NODE_STATE::IN_ITERATION);
+				set_all_worker_state(NODE_STATE::IN_ITERATION);
 				set_current_state(NODE_STATE::IN_ITERATION);
 				#ifdef MY_DEBUG
-				LOG_TRIVIAL(info) << "controller(" << m_rank << ") out FINISH_DISTRIBUTED_GRAPH";
+				LOG_TRIVIAL(info) << "master(" << m_rank << ") out FINISH_DISTRIBUTED_GRAPH";
 				#endif
 				break;
 			}
@@ -689,35 +689,35 @@ void controller::go()
 			case NODE_STATE::IN_ITERATION:
 			{
 				#ifdef MY_DEBUG
-				LOG_TRIVIAL(info) << "controller(" << m_rank << ") in IN_ITERATION";
+				LOG_TRIVIAL(info) << "master(" << m_rank << ") in IN_ITERATION";
 				#endif
 				//发送给所有的计算节点一个控制信息，使其开始进行迭代, 
 				//计算节点收到该消息后进入IN_ITERATION状态，并开始迭代
-				controller_permit_start_msg *msg = new controller_permit_start_msg();
-				msg->set_controller_id(m_rank);
+				master_permit_start_msg *msg = new master_permit_start_msg();
+				msg->set_master_id(m_rank);
 				broadcast_msg_to_all(msg);
 				delete msg;
 
 				//从所有的计算节点收消息，这条消息代表所有的计算节点不会向外发update了
 				m_machine_is_stop.clear();
 			
-				//LOG_TRIVIAL(info) << "controller(" << m_rank << ") recving stop msg";
-				recv_msg_from_compute_node();
-				LOG_TRIVIAL(info) << "controller(" << m_rank 
+				//LOG_TRIVIAL(info) << "master(" << m_rank << ") recving stop msg";
+				recv_msg_from_worker();
+				LOG_TRIVIAL(info) << "master(" << m_rank 
 					<< ") received all stop send update msg";
 				//while (1) {}
 
-				process_compute_node_info();
+				process_worker_info();
 				m_current_loop++;
 
 
 				//进入BETWEEN_TWO_ITERATION状态
-				set_all_compute_node_state(NODE_STATE::BETWEEN_TWO_ITERATION);
-				//recv_msg_from_compute_node();
+				set_all_worker_state(NODE_STATE::BETWEEN_TWO_ITERATION);
+				//recv_msg_from_worker();
 				set_current_state(NODE_STATE::BETWEEN_TWO_ITERATION);
 			
 				#ifdef MY_DEBUG
-				LOG_TRIVIAL(info) << "controller(" << m_rank << ") out IN_ITERATION";
+				LOG_TRIVIAL(info) << "master(" << m_rank << ") out IN_ITERATION";
 				#endif
 				break;
 			}
@@ -726,42 +726,42 @@ void controller::go()
 			case NODE_STATE::BETWEEN_TWO_ITERATION:
 			{
 				#ifdef MY_DEBUG
-				LOG_TRIVIAL(info) << "controller(" << m_rank << ") in BETWEEN_TWO_ITERATION";
+				LOG_TRIVIAL(info) << "master(" << m_rank << ") in BETWEEN_TWO_ITERATION";
 				#endif
 			
 				//等待计算节点将自己一轮迭代的一些运行消息发送过来。
 				m_run_info.clear();
 				//从计算节点接收消息，存在m_run_info中
-				recv_msg_from_compute_node();
-				LOG_TRIVIAL(info) << "controller(" << m_rank
+				recv_msg_from_worker();
+				LOG_TRIVIAL(info) << "master(" << m_rank
 					<< ") received all run info msg";
 
 
 				//对m_run_info的信息进行处理
 				//TODO
 
-				if (check_compute_node_run_info()) { //check ok
+				if (check_worker_run_info()) { //check ok
 					//看是否达到最大迭代次数
-					//LOG_TRIVIAL(info) << "controller(" << m_rank << ")"<< ;
+					//LOG_TRIVIAL(info) << "master(" << m_rank << ")"<< ;
 					if (m_max_loop <= m_current_loop) {
 					
-						set_all_compute_node_state(NODE_STATE::FINISH_ITERATION);
+						set_all_worker_state(NODE_STATE::FINISH_ITERATION);
 						set_current_state(NODE_STATE::FINISH_ITERATION);
 					}
 					else {
 						//继续迭代
-						set_all_compute_node_state(NODE_STATE::IN_ITERATION);
+						set_all_worker_state(NODE_STATE::IN_ITERATION);
 						set_current_state(NODE_STATE::IN_ITERATION);
 					}
 				}
 				else {
-					LOG_TRIVIAL(info) << "controller(" << m_rank
+					LOG_TRIVIAL(info) << "master(" << m_rank
 									<< ")[BETWEEN_TWO_ITERATION]"
 									<<"check runtime infomation failed";
 					exit(0);
 				}
 				#ifdef MY_DEBUG
-				LOG_TRIVIAL(info) << "controller(" << m_rank << ") out BETWEEN_TWO_ITERATION";
+				LOG_TRIVIAL(info) << "master(" << m_rank << ") out BETWEEN_TWO_ITERATION";
 				#endif
 				break;
 			}
@@ -769,25 +769,25 @@ void controller::go()
 			case NODE_STATE::FINISH_ITERATION:
 			{
 				#ifdef MY_DEBUG
-				LOG_TRIVIAL(info) << "controller(" << m_rank << ") in FINISH_ITERATION";
+				LOG_TRIVIAL(info) << "master(" << m_rank << ") in FINISH_ITERATION";
 				#endif
 				set_current_state(NODE_STATE::FINISH_ALL);
 				#ifdef MY_DEBUG
-				LOG_TRIVIAL(info) << "controller(" << m_rank << ") out FINISH_ITERATION";
+				LOG_TRIVIAL(info) << "master(" << m_rank << ") out FINISH_ITERATION";
 				#endif
 				break;
 			}
 			case NODE_STATE::FINISH_ALL:
 			{
 				#ifdef MY_DEBUG
-				LOG_TRIVIAL(info) << "controller(" << m_rank << ") in FINISH_ALL";
+				LOG_TRIVIAL(info) << "master(" << m_rank << ") in FINISH_ALL";
 				#endif
 				//end_all();
 				#ifdef MY_DEBUG
-				LOG_TRIVIAL(info) << "controller(" << m_rank << ") end all";
+				LOG_TRIVIAL(info) << "master(" << m_rank << ") end all";
 				#endif
 				#ifdef MY_DEBUG
-				LOG_TRIVIAL(info) << "controller(" << m_rank << ") out FINISH_ALL";
+				LOG_TRIVIAL(info) << "master(" << m_rank << ") out FINISH_ALL";
 				#endif
 				go_on = false;
 				break;
@@ -796,11 +796,11 @@ void controller::go()
 	}
 }
 
-inline void controller::set_all_compute_node_state(NODE_STATE state)
+inline void master::set_all_worker_state(NODE_STATE state)
 {
-	controller_change_compute_node_state_msg *msg
-		= new controller_change_compute_node_state_msg();
-	msg->set_controller_id(m_rank);
+	master_change_worker_state_msg *msg
+		= new master_change_worker_state_msg();
+	msg->set_master_id(m_rank);
 	msg->set_state_index((int)state);
 	broadcast_msg_to_all(msg);
 	delete msg;
@@ -808,7 +808,7 @@ inline void controller::set_all_compute_node_state(NODE_STATE state)
 
 
 //必须接收到所有计算节点的消息
-void controller::recv_msg_from_compute_node()
+void master::recv_msg_from_worker()
 {
 	const int COMPUTE_SIZE = m_machines.size();
 	ecgraph::byte_t **recvmsg_buf;
@@ -817,7 +817,7 @@ void controller::recv_msg_from_compute_node()
 		recvmsg_buf = new ecgraph::byte_t *[COMPUTE_SIZE];
 	}
 	catch(std::bad_alloc){
-		LOG_TRIVIAL(error) << "can not alloc memory for receiving msg from compute node";
+		LOG_TRIVIAL(error) << "can not alloc memory for receiving msg from worker";
 		exit(0);
 	}
 
@@ -827,7 +827,7 @@ void controller::recv_msg_from_compute_node()
 		}
 		catch (std::bad_alloc) {
 			LOG_TRIVIAL(error) << "can not alloc memory for receiving msg["
-								<<i<<"] from compute node";
+								<<i<<"] from worker";
 			exit(0);
 		}
 	}
@@ -849,13 +849,13 @@ void controller::recv_msg_from_compute_node()
 	//等待所有计算节点的消息
 	MPI_Waitall(COMPUTE_SIZE, reqs, status);
 
-	/*LOG_TRIVIAL(info) << "controller(" << m_rank << ") TEST";
+	/*LOG_TRIVIAL(info) << "master(" << m_rank << ") TEST";
 	while (1) {}*/
 	//处理所有消息
 	int count = 0;
 	for (int i = 0; i < COMPUTE_SIZE; i++) {
 		MPI_Get_count(&status[i], MPI_BYTE, &count);
-		LOG_TRIVIAL(info) << "controller(" << m_rank 
+		LOG_TRIVIAL(info) << "master(" << m_rank 
 							<< ") received msg from "<<index_to_machine[i];
 
 		handle_graph_controll_data((ecgraph::byte_t *)(recvmsg_buf[i]), count);
@@ -863,7 +863,7 @@ void controller::recv_msg_from_compute_node()
 
 	//处理完计算节点发过来的控制消息之后，做进一步处理
 	//如使计算节点分裂等等,让计算节点继续等等
-	//process_compute_node_info();
+	//process_worker_info();
 
 
 	
@@ -877,28 +877,28 @@ void controller::recv_msg_from_compute_node()
 
 }
 
-void controller::broadcast_msg_to_all(base_message * msg)
+void master::broadcast_msg_to_all(base_message * msg)
 {
 	std::string json_msg = msg->serialize();
 	send_to_all_node((void *)json_msg.c_str(), json_msg.size(), GRAPH_CONTROLL_TAG);
 }
 
-inline void controller::process_compute_node_info()
+inline void master::process_worker_info()
 {
 	//assert(m_run_info.size() == m_machines.size());
 	//查看是否到达最大迭代次数
 	if (m_run_info.size() == 0) { return; }
 	auto first = m_run_info.begin();
 	
-	if (!check_compute_node_run_info()) {
+	if (!check_worker_run_info()) {
 		return;
 	}
 	
 	/*if (m_max_loop <= m_current_loop) {
-		controller_end_all_msg *msg = new controller_end_all_msg();
-		msg->set_controller_id(m_rank);
+		master_end_all_msg *msg = new master_end_all_msg();
+		msg->set_master_id(m_rank);
 		broadcast_msg_to_all(msg);
-		set_all_compute_node_state(NODE_STATE::FINISH_ITERATION);
+		set_all_worker_state(NODE_STATE::FINISH_ITERATION);
 		return;
 	}*/
 	//根据计算节点的运行信息，决定下一步的工作，如计算节点的分等；
@@ -907,18 +907,18 @@ inline void controller::process_compute_node_info()
 	//代码暂无TODO
 
 	//使计算节点继续迭代
-	/*controller_permit_start_msg *msg = new controller_permit_start_msg();
-	msg->set_controller_id(m_rank);
+	/*master_permit_start_msg *msg = new master_permit_start_msg();
+	msg->set_master_id(m_rank);
 	broadcast_msg_to_all(msg);*/
 }
 
-inline bool controller::check_compute_node_run_info()
+inline bool master::check_worker_run_info()
 {
 	for (auto &item : m_run_info) {
 		if (m_max_loop >0) {
 			if (m_max_loop < item.second.current_loop) {
-				LOG_TRIVIAL(error) << "[check_compute_node_run_info] check failed "
-									<<"because the compute nodes current loop is bigger than max loop";
+				LOG_TRIVIAL(error) << "[check_worker_run_info] check failed "
+									<<"because the workers current loop is bigger than max loop";
 				return false;
 			}
 		}
@@ -932,7 +932,7 @@ inline bool controller::check_compute_node_run_info()
 }
 
 
-inline int controller::get_message_id(ecgraph::byte_t * buf, int len)
+inline int master::get_message_id(ecgraph::byte_t * buf, int len)
 {
 	ptree pt;
 	std::stringstream ss;
@@ -949,28 +949,28 @@ inline int controller::get_message_id(ecgraph::byte_t * buf, int len)
 	return msg_id;
 }
 
-inline void controller::handle_message(compute_node_runtime_info_msg &msg)
+inline void master::handle_message(worker_runtime_info_msg &msg)
 {
 	//收到所有计算节点发送的这条消息就代表一轮的迭代结束，
 	//控制节点知道了计算节点迭代的一些消息
-	int compute_node_id = msg.get_compute_node_id();
-	auto iter = m_run_info.find(compute_node_id);
+	int worker_id = msg.get_worker_id();
+	auto iter = m_run_info.find(worker_id);
 	
 	if (iter == m_run_info.end()) {
-		compute_node_run_info_t run;
-		run.compute_id = compute_node_id;
+		worker_run_info_t run;
+		run.compute_id = worker_id;
 		run.runtime = msg.get_runtime();
 		run.current_loop = msg.get_current_loop();
-		m_run_info[compute_node_id] = run;
+		m_run_info[worker_id] = run;
 	}
 }
 
-inline void controller::handle_message(compute_node_stop_send_update_msg & msg)
+inline void master::handle_message(worker_stop_send_update_msg & msg)
 {
-	ecgraph::vertex_t compute_node_id = msg.get_compute_node_id();
-	auto iter = m_machine_is_stop.find(compute_node_id);
+	ecgraph::vertex_t worker_id = msg.get_worker_id();
+	auto iter = m_machine_is_stop.find(worker_id);
 	if (iter == m_machine_is_stop.end()) {
-		m_machine_is_stop[compute_node_id] = true;
+		m_machine_is_stop[worker_id] = true;
 	}
 }
 

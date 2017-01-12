@@ -26,7 +26,7 @@
 //结束消息
 #define	END_TAG 1000
 
-#define CONTROLLER_RANK 0 //控制节点
+#define MASTER_RANK 0 //控制节点
 
 
 #define RECV_BUFFER_SIZE 20000000   //每个计算节点接收数据的大小 20M 这个必须以字节为单位计数
@@ -49,8 +49,8 @@ enum NODE_STATE {				//本机状态
 };
 
 enum NODE_TYPE {
-	CONTROLL_NODE,
-	COMPUTE_NODE
+	MASTER_NODE,
+	WORKER_NODE
 };
 void my_sleep(unsigned long seconds) {
 #ifdef _MSC_VER
@@ -66,7 +66,7 @@ typedef struct {
 	double runtime;
 	int max_loop;
 	int current_loop;
-} compute_node_run_info_t;
+} worker_run_info_t;
 
 
 
@@ -78,9 +78,9 @@ typedef struct {
 */
 
 //计算节点请求开始迭代 msg_id == 0
-//内容为compute_node_id
-//compute_node -> controller 计算节点发给控制节点
-std::string compute_node_runtime_info_str =
+//内容为worker_id
+//worker -> master 计算节点发给控制节点
+std::string worker_runtime_info_str =
 R"({
 		"msg_id" : "0",
 		"content":{
@@ -91,19 +91,19 @@ R"({
 })";
 
 //控制节点允许计算节点开始迭代的请求 msg_id == 1000
-//内容为controller_id
-//controller -> compute_node
-std::string controller_permit_start_str =
+//内容为master_id
+//master -> worker
+std::string master_permit_start_str =
 R"({
 		"msg_id" : "1000",
 		"content":{
-			"controller_id": "0"	
+			"master_id": "0"	
 		}
 })";
 
 //msg_id == 1，是计算节点发过来的信息，这条是关于计算节点迭代的一些信息，如一次迭代的
 //运行时间，其他的一些负载信息，发给控制节点供控制节点判断
-std::string compute_node_iteration_str = //废弃
+std::string worker_iteration_str = //废弃
 R"({
 	"msg_id" : "1",
 	"content":{
@@ -112,47 +112,47 @@ R"({
 })";
 
 //msg_id == 1001，控制节点发送该消息使所有的计算节点结束
-std::string controller_end_all_str =
+std::string master_end_all_str =
 R"({
 	"msg_id" : "1001",
 	"content":{
-		"controller_id":"0"
+		"master_id":"0"
 	}
 })";
 
 //msg_id == 2, 计算节点发给控制节点的消息，该消息在计算节点扫完自己的边后发送
-std::string compute_node_stop_send_update_str =
+std::string worker_stop_send_update_str =
 R"({
 	"msg_id" : "2",
 	"content":{
-		"compute_node_id":"-1"
+		"worker_id":"-1"
 	}
 })";
 
 //msg_id == 1002, 控制节点发送给计算节点改变状态的消息
-std::string controller_change_compute_node_state_str =
+std::string master_change_worker_state_str =
 R"({
 	"msg_id" : "1002",
 	"content":{
-		"controller_id":"-1",
+		"master_id":"-1",
 		"state_index": "-1"
 	}
 })";
 //msg_id == 1003， 控制节点发给结算节点，表示最大迭代次数
-std::string controller_send_max_loop_str =
+std::string master_send_max_loop_str =
 R"({
 	"msg_id" : "1003",
 	"content":{
-		"controller_id":"-1",
+		"master_id":"-1",
 		"max_loop": "-1"
 	}
 })";
 //msg_id == 1004
-std::string controller_end_one_iteration_str =
+std::string master_end_one_iteration_str =
 R"({
 	"msg_id" : "1004",
 	"content":{
-		"controller_id":"-1"
+		"master_id":"-1"
 	}
 })";
 #endif

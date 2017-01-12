@@ -151,8 +151,8 @@
   <ItemGroup>
     <ClInclude Include="dx-graph\algorithms\old_pagerank.h" />
     <ClInclude Include="dx-graph\algorithms\pagerank.h" />
-    <ClInclude Include="dx-graph\core\computation.h" />
-    <ClInclude Include="dx-graph\core\controller.h" />
+    <ClInclude Include="dx-graph\core\worker.h" />
+    <ClInclude Include="dx-graph\core\master.h" />
     <ClInclude Include="dx-graph\core\engine.h" />
     <ClInclude Include="dx-graph\core\graph_define.h" />
     <ClInclude Include="dx-graph\core\judge.h" />

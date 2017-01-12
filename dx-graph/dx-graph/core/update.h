@@ -1,8 +1,8 @@
 ﻿#ifndef _UPDATE_H_
 #define _UPDATE_H_
 //#include "core/engine.h"
-#include "core/controller.h"
-#include "core/computation.h"
+#include "core/master.h"
+#include "core/worker.h"
 #include "core/graph_define.h"
 
 

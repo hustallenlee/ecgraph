@@ -3,8 +3,8 @@
 #include <cstdlib>
 
 //#include "core/engine.h"
-#include "core/controller.h"
-#include "core/computation.h"
+#include "core/master.h"
+#include "core/worker.h"
 #include "core/graph_define.h"
 #include "core/update.h"
 
@@ -24,7 +24,7 @@
 
 
 //TODO
-//#include "core/computation.h" 
+//#include "core/worker.h" 
 
 //第一个参数为图数据文件名，对于不同的算法后续的参数不同
 int main(int argc, char **argv) {
@@ -41,10 +41,10 @@ int main(int argc, char **argv) {
 	
 	
 	//rank值为1，2，3三个计算节点
-	std::vector<ecgraph::vertex_t> compute_nodes = {1,2,3};
+	std::vector<ecgraph::vertex_t> worker_nodes = {1,2,3};
 	ecgraph::graph_data gd(argv[1]);
-	ecgraph::consistent_hash ring(compute_nodes, &gd);
-	if (self_rank == CONTROLLER_RANK) { //this is a controller
+	ecgraph::consistent_hash ring(worker_nodes, &gd);
+	if (self_rank == MASTER_RANK) { //this is a master
 
 		//ecgraph::buffer<ecgraph::edge_t> file_buffer(GRAPH_DATA_BUFFER_SIZE);
 		//开始读文件
@@ -52,19 +52,19 @@ int main(int argc, char **argv) {
 		//file_buffer.start_write(argv[1]);
 
 		//控制节点
-		controller controller_node(argc, argv,
+		master master_node(argc, argv,
 									world_size, self_rank, 
 									&ring);
 		
 		//初始化，主要是做初始图的划分，传送图分区到对应的计算节点，
-		//controller_node.init();	
+		//master_node.init();	
 
 		//图数据等信息传送完毕，开始控制图计算的进行
 		//my_sleep(8);
 		#ifdef MY_DEBUG
-		LOG_TRIVIAL(info) <<"rank "<< self_rank << " starting as a controller";
+		LOG_TRIVIAL(info) <<"rank "<< self_rank << " starting as a master";
 		#endif
-		controller_node.start();
+		master_node.start();
 	}
 	else {
 		
@@ -74,17 +74,17 @@ int main(int argc, char **argv) {
 		//启动
 		#ifdef MY_DEBUG
 		LOG_TRIVIAL(info) <<"rank "<< self_rank 
-			<<" starting as a compute node, run pagerank algorithm";
+			<<" starting as a worker, run pagerank algorithm";
 		#endif
 		pagerank algo;
 
 
 		//将算法放入
-		computation<update_weight_double_t> compute_node(argc, argv, 
+		worker<update_weight_double_t> worker_node(argc, argv, 
 												world_size, self_rank, 
 												&ring, &algo);
 		
-		compute_node.start();
+		worker_node.start();
 	}
 	MPI_Finalize();
 	return 0;

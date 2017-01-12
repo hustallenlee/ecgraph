@@ -38,7 +38,7 @@ namespace ecgraph{
         //node_to_ring存放计算节点在ring环中的值到机器节点的映射。
         std::map<vertex_t, vertex_t> m_node_to_ring;
 
-        //uint32_t compute_node_count;
+        //uint32_t worker_count;
         
         //m_noeds 存放计算节点列表， 以vertex_t表示一个计算节点。
         //std::vector<vertex_t> m_nodes;
@@ -105,9 +105,9 @@ namespace ecgraph{
 
         //当node_id的计算节点需要分裂时，本函数告知那些涉及到的图结点可能需要重新分配
         std::pair<vertex_t, vertex_t> split(vertex_t node_id){
-        //the compute node node_id is too busy, so it should be splited
+        //the worker node_id is too busy, so it should be splited
             
-            //add the compute node
+            //add the worker
             //TODO
                         
 			return std::make_pair(0,1);
@@ -119,7 +119,7 @@ namespace ecgraph{
         //return node_id
             auto iter = m_node_to_ring.lower_bound(vertex_to_ring_value(vertex_id));
             if(iter!=m_node_to_ring.end()){
-                return iter->second; //return the nearest compute node
+                return iter->second; //return the nearest worker
             }
             else{
                 return m_node_to_ring.begin()->second;
@@ -238,12 +238,12 @@ namespace ecgraph{
 		}
 
 		//计算集群大小，不含控制节点
-		int compute_size() {
+		int worker_size() {
 			return m_node_to_ring.size();
 		}
 
 
-		void get_machines(std::vector<vertex_t> &machines) {
+		void get_workers(std::vector<vertex_t> &machines) {
 			machines.clear();
 			for (auto & item : m_node_to_ring) {
 				machines.push_back(item.second);

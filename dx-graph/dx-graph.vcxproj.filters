@@ -46,12 +46,6 @@
     <ClInclude Include="dx-graph\utils\types.h">
       <Filter>utils</Filter>
     </ClInclude>
-    <ClInclude Include="dx-graph\core\controller.h">
-      <Filter>core</Filter>
-    </ClInclude>
-    <ClInclude Include="dx-graph\core\computation.h">
-      <Filter>core</Filter>
-    </ClInclude>
     <ClInclude Include="dx-graph\utils\controll_info.h" />
     <ClInclude Include="dx-graph\utils\consistent_hash.h">
       <Filter>utils</Filter>
@@ -76,6 +70,12 @@
     </ClInclude>
     <ClInclude Include="dx-graph\algorithms\old_pagerank.h">
       <Filter>algorithms</Filter>
+    </ClInclude>
+    <ClInclude Include="dx-graph\core\master.h">
+      <Filter>core</Filter>
+    </ClInclude>
+    <ClInclude Include="dx-graph\core\worker.h">
+      <Filter>core</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

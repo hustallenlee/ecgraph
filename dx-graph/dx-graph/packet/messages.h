@@ -16,13 +16,13 @@ using namespace boost::property_tree;
 using namespace boost::gregorian;
 using namespace boost;
 
-#define COMPUTE_NODE_RUNTIME_INFO_MSGID 0
-#define CONTROLLER_PERMIT_START_MSGID 1000
-#define CONTROLLER_END_ALL_MSGID 1001
-#define COMPUTE_NODE_STOP_SEND_UPDATE_MSGID 2
-#define CONTROLLER_CHANGE_COMPUTE_NODE_STATE_MSGID 1002
-#define CONTROLLER_SEND_MAX_LOOP_MSGID 1003
-#define CONTROLLER_END_ONE_ITERATION_MSGID 1004
+#define WORKER_RUNTIME_INFO_MSGID 0
+#define MASTER_PERMIT_START_MSGID 1000
+#define MASTER_END_ALL_MSGID 1001
+#define WORKER_STOP_SEND_UPDATE_MSGID 2
+#define MASTER_CHANGE_WORKER_STATE_MSGID 1002
+#define MASTER_SEND_MAX_LOOP_MSGID 1003
+#define MASTER_END_ONE_ITERATION_MSGID 1004
 
 class base_message {
 protected:
@@ -55,34 +55,34 @@ public:
 };
 
 //////////////////////////////////////////////////////////////////////
-class compute_node_runtime_info_msg: public base_message{
+class worker_runtime_info_msg: public base_message{
 private:
-	ecgraph::vertex_t m_compute_node_id;
+	ecgraph::vertex_t m_worker_id;
 	double m_runtime;
 	//int m_max_loop;
 	int m_current_loop;
 public:
-	compute_node_runtime_info_msg() {
-		m_msg_id = COMPUTE_NODE_RUNTIME_INFO_MSGID;
+	worker_runtime_info_msg() {
+		m_msg_id = WORKER_RUNTIME_INFO_MSGID;
 	}
 	//从json 字符串中load
 	void load(std::string msg){
 		base_message::load(msg);
-		assert(COMPUTE_NODE_RUNTIME_INFO_MSGID == m_msg_id);
+		assert(WORKER_RUNTIME_INFO_MSGID == m_msg_id);
 		try {
-			m_compute_node_id = pt.get<ecgraph::vertex_t>("content.compute_node_id");
+			m_worker_id = pt.get<ecgraph::vertex_t>("content.worker_id");
 			
 		}
 		catch (boost::property_tree::ptree_bad_path) {
-			LOG_TRIVIAL(error) << "[compute_node_runtime_info_msg] illegal message"
-								<< "no field named content.compute_node_id";
+			LOG_TRIVIAL(error) << "[worker_runtime_info_msg] illegal message"
+								<< "no field named content.worker_id";
 		}
 		try {
 			m_runtime = pt.get<double>("content.runtime");
 
 		}
 		/*catch (boost::property_tree::ptree_bad_path) {
-			LOG_TRIVIAL(error) << "[compute_node_runtime_info_msg] illegal message"
+			LOG_TRIVIAL(error) << "[worker_runtime_info_msg] illegal message"
 				<< "no field named content.runtime";
 		}
 		try {
@@ -90,7 +90,7 @@ public:
 
 		}*/
 		catch (boost::property_tree::ptree_bad_path) {
-			LOG_TRIVIAL(error) << "[compute_node_runtime_info_msg] illegal message"
+			LOG_TRIVIAL(error) << "[worker_runtime_info_msg] illegal message"
 				<< "no field named content.max_loop";
 		}
 
@@ -99,7 +99,7 @@ public:
 
 		}
 		catch (boost::property_tree::ptree_bad_path) {
-			LOG_TRIVIAL(error) << "[compute_node_runtime_info_msg] illegal message"
+			LOG_TRIVIAL(error) << "[worker_runtime_info_msg] illegal message"
 				<< "no field named content.current_loop";
 		}
 		
@@ -107,11 +107,11 @@ public:
 	
 	//get 和 set
 	//=============================================================
-	ecgraph::vertex_t get_compute_node_id() {
-		return m_compute_node_id;
+	ecgraph::vertex_t get_worker_id() {
+		return m_worker_id;
 	}
-	void set_compute_node_id(ecgraph::vertex_t compute_node_id) {
-		m_compute_node_id = compute_node_id;
+	void set_worker_id(ecgraph::vertex_t worker_id) {
+		m_worker_id = worker_id;
 	}
 
 	ecgraph::vertex_t get_msg_id() {
@@ -146,7 +146,7 @@ public:
 
 		//=======填充
 		pt.put("msg_id", std::to_string(m_msg_id));
-		pt.put("content.compute_node_id", std::to_string(m_compute_node_id));
+		pt.put("content.worker_id", std::to_string(m_worker_id));
 		pt.put("content.runtime", std::to_string(m_runtime));
 		//pt.put("content.max_loop", std::to_string(m_max_loop));
 		pt.put("content.current_loop", std::to_string(m_current_loop));
@@ -160,34 +160,34 @@ public:
 
 
 ////////////////////////////////////////////////////////////////////////////
-class controller_permit_start_msg : public base_message {
+class master_permit_start_msg : public base_message {
 private:
-	ecgraph::vertex_t m_controller_id;
+	ecgraph::vertex_t m_master_id;
 public:
-	controller_permit_start_msg(){
-		m_msg_id = CONTROLLER_PERMIT_START_MSGID;
+	master_permit_start_msg(){
+		m_msg_id = MASTER_PERMIT_START_MSGID;
 	}
 	//从json 字符串中load
 	void load(std::string msg) {
 		base_message::load(msg);
-		assert(CONTROLLER_PERMIT_START_MSGID == m_msg_id);
+		assert(MASTER_PERMIT_START_MSGID == m_msg_id);
 		try {
-			m_controller_id = pt.get<ecgraph::vertex_t>("content.controller_id");
+			m_master_id = pt.get<ecgraph::vertex_t>("content.master_id");
 
 		}
 		catch (boost::property_tree::ptree_bad_path) {
-			LOG_TRIVIAL(error) << "[controller_permit_start_msg] illegal message, "
-				<< "no field named content.controller_id";
+			LOG_TRIVIAL(error) << "[master_permit_start_msg] illegal message, "
+				<< "no field named content.master_id";
 		}
 	}
 
 	//get 和 set
 	//=============================================================
-	ecgraph::vertex_t get_controller_id() {
-		return m_controller_id;
+	ecgraph::vertex_t get_master_id() {
+		return m_master_id;
 	}
-	void set_controller_id(ecgraph::vertex_t controller_id) {
-		m_controller_id = controller_id;
+	void set_master_id(ecgraph::vertex_t master_id) {
+		m_master_id = master_id;
 	}
 
 	ecgraph::vertex_t get_msg_id() {
@@ -200,7 +200,7 @@ public:
 
 		//=======填充
 		pt.put("msg_id", std::to_string(m_msg_id));
-		pt.put("content.controller_id", std::to_string(m_controller_id));
+		pt.put("content.master_id", std::to_string(m_master_id));
 		//=======
 
 		std::stringstream ss;
@@ -209,34 +209,34 @@ public:
 	}
 };
 ///////////////////////////////////////////////////////////////////////////////
-class controller_end_all_msg : public base_message {
+class master_end_all_msg : public base_message {
 private:
-	ecgraph::vertex_t m_controller_id;
+	ecgraph::vertex_t m_master_id;
 public:
-	controller_end_all_msg() {
-		m_msg_id = CONTROLLER_END_ALL_MSGID;
+	master_end_all_msg() {
+		m_msg_id = MASTER_END_ALL_MSGID;
 	}
 	//从json 字符串中load
 	void load(std::string msg) {
 		base_message::load(msg);
-		assert(CONTROLLER_END_ALL_MSGID == m_msg_id);
+		assert(MASTER_END_ALL_MSGID == m_msg_id);
 		try {
-			m_controller_id = pt.get<ecgraph::vertex_t>("content.controller_id");
+			m_master_id = pt.get<ecgraph::vertex_t>("content.master_id");
 
 		}
 		catch (boost::property_tree::ptree_bad_path) {
-			LOG_TRIVIAL(error) << "[controller_end_all_msg] illegal message, "
-				<< "no field named content.controller_id";
+			LOG_TRIVIAL(error) << "[master_end_all_msg] illegal message, "
+				<< "no field named content.master_id";
 		}
 	}
 
 	//get 和 set
 	//=============================================================
-	ecgraph::vertex_t get_controller_id() {
-		return m_controller_id;
+	ecgraph::vertex_t get_master_id() {
+		return m_master_id;
 	}
-	void set_controller_id(ecgraph::vertex_t controller_id) {
-		m_controller_id = controller_id;
+	void set_master_id(ecgraph::vertex_t master_id) {
+		m_master_id = master_id;
 	}
 
 	ecgraph::vertex_t get_msg_id() {
@@ -249,7 +249,7 @@ public:
 
 		//=======填充
 		pt.put("msg_id", std::to_string(m_msg_id));
-		pt.put("content.controller_id", std::to_string(m_controller_id));
+		pt.put("content.master_id", std::to_string(m_master_id));
 		//=======
 
 		std::stringstream ss;
@@ -258,34 +258,34 @@ public:
 	}
 };
 ///////////////////////////////////////////////////////////////////////////////
-class compute_node_stop_send_update_msg : public base_message {
+class worker_stop_send_update_msg : public base_message {
 private:
-	ecgraph::vertex_t m_compute_node_id;
+	ecgraph::vertex_t m_worker_id;
 public:
-	compute_node_stop_send_update_msg() {
-		m_msg_id = COMPUTE_NODE_STOP_SEND_UPDATE_MSGID;
+	worker_stop_send_update_msg() {
+		m_msg_id = WORKER_STOP_SEND_UPDATE_MSGID;
 	}
 	//从json 字符串中load
 	void load(std::string msg) {
 		base_message::load(msg);
-		assert(COMPUTE_NODE_STOP_SEND_UPDATE_MSGID == m_msg_id);
+		assert(WORKER_STOP_SEND_UPDATE_MSGID == m_msg_id);
 		try {
-			m_compute_node_id = pt.get<ecgraph::vertex_t>("content.compute_node_id");
+			m_worker_id = pt.get<ecgraph::vertex_t>("content.worker_id");
 
 		}
 		catch (boost::property_tree::ptree_bad_path) {
-			LOG_TRIVIAL(error) << "[compute_node_stop_send_update_msg] illegal message, "
-				<< "no field named content.compute_node_id";
+			LOG_TRIVIAL(error) << "[worker_stop_send_update_msg] illegal message, "
+				<< "no field named content.worker_id";
 		}
 	}
 
 	//get 和 set
 	//=============================================================
-	ecgraph::vertex_t get_compute_node_id() {
-		return m_compute_node_id;
+	ecgraph::vertex_t get_worker_id() {
+		return m_worker_id;
 	}
-	void set_compute_node_id(ecgraph::vertex_t compute_node_id) {
-		m_compute_node_id = compute_node_id;
+	void set_worker_id(ecgraph::vertex_t worker_id) {
+		m_worker_id = worker_id;
 	}
 
 	ecgraph::vertex_t get_msg_id() {
@@ -298,7 +298,7 @@ public:
 
 		//=======填充
 		pt.put("msg_id", std::to_string(m_msg_id));
-		pt.put("content.compute_node_id", std::to_string(m_compute_node_id));
+		pt.put("content.worker_id", std::to_string(m_worker_id));
 		//=======
 
 		std::stringstream ss;
@@ -307,43 +307,43 @@ public:
 	}
 };
 ///////////////////////////////////////////////////////////////////////////////
-class controller_change_compute_node_state_msg : public base_message {
+class master_change_worker_state_msg : public base_message {
 private:
-	ecgraph::vertex_t m_controller_id;
+	ecgraph::vertex_t m_master_id;
 	int m_state_index;
 public:
-	controller_change_compute_node_state_msg() {
-		m_msg_id = CONTROLLER_CHANGE_COMPUTE_NODE_STATE_MSGID;
+	master_change_worker_state_msg() {
+		m_msg_id = MASTER_CHANGE_WORKER_STATE_MSGID;
 	}
 	//从json 字符串中load
 	void load(std::string msg) {
 		base_message::load(msg);
-		assert(CONTROLLER_CHANGE_COMPUTE_NODE_STATE_MSGID == m_msg_id);
+		assert(MASTER_CHANGE_WORKER_STATE_MSGID == m_msg_id);
 		try {
-			m_controller_id = pt.get<ecgraph::vertex_t>("content.controller_id");
+			m_master_id = pt.get<ecgraph::vertex_t>("content.master_id");
 
 		}
 		catch (boost::property_tree::ptree_bad_path) {
-			LOG_TRIVIAL(error) << "[controller_end_all_msg] illegal message, "
-				<< "no field named content.controller_id";
+			LOG_TRIVIAL(error) << "[master_end_all_msg] illegal message, "
+				<< "no field named content.master_id";
 		}
 		try {
 			m_state_index = pt.get<ecgraph::vertex_t>("content.state_index");
 
 		}
 		catch (boost::property_tree::ptree_bad_path) {
-			LOG_TRIVIAL(error) << "[controller_end_all_msg] illegal message, "
+			LOG_TRIVIAL(error) << "[master_end_all_msg] illegal message, "
 				<< "no field named content.state_index";
 		}
 	}
 
 	//get 和 set
 	//=============================================================
-	ecgraph::vertex_t get_controller_id() {
-		return m_controller_id;
+	ecgraph::vertex_t get_master_id() {
+		return m_master_id;
 	}
-	void set_controller_id(ecgraph::vertex_t controller_id) {
-		m_controller_id = controller_id;
+	void set_master_id(ecgraph::vertex_t master_id) {
+		m_master_id = master_id;
 	}
 
 	ecgraph::vertex_t get_msg_id() {
@@ -365,7 +365,7 @@ public:
 
 		//=======填充
 		pt.put("msg_id", std::to_string(m_msg_id));
-		pt.put("content.controller_id", std::to_string(m_controller_id));
+		pt.put("content.master_id", std::to_string(m_master_id));
 		pt.put("content.state_index", std::to_string(m_state_index));
 		//=======
 
@@ -376,43 +376,43 @@ public:
 };
 ///////////////////////////////////////////////////////////////////////////////
 
-class controller_send_max_loop_msg : public base_message {
+class master_send_max_loop_msg : public base_message {
 private:
-	ecgraph::vertex_t m_controller_id;
+	ecgraph::vertex_t m_master_id;
 	int m_max_loop;
 public:
-	controller_send_max_loop_msg() {
-		m_msg_id = CONTROLLER_SEND_MAX_LOOP_MSGID;
+	master_send_max_loop_msg() {
+		m_msg_id = MASTER_SEND_MAX_LOOP_MSGID;
 	}
 	//从json 字符串中load
 	void load(std::string msg) {
 		base_message::load(msg);
-		assert(CONTROLLER_SEND_MAX_LOOP_MSGID == m_msg_id);
+		assert(MASTER_SEND_MAX_LOOP_MSGID == m_msg_id);
 		try {
-			m_controller_id = pt.get<ecgraph::vertex_t>("content.controller_id");
+			m_master_id = pt.get<ecgraph::vertex_t>("content.master_id");
 
 		}
 		catch (boost::property_tree::ptree_bad_path) {
-			LOG_TRIVIAL(error) << "[controller_end_all_msg] illegal message, "
-				<< "no field named content.controller_id";
+			LOG_TRIVIAL(error) << "[master_end_all_msg] illegal message, "
+				<< "no field named content.master_id";
 		}
 		try {
 			m_max_loop = pt.get<int>("content.max_loop");
 
 		}
 		catch (boost::property_tree::ptree_bad_path) {
-			LOG_TRIVIAL(error) << "[controller_end_all_msg] illegal message, "
+			LOG_TRIVIAL(error) << "[master_end_all_msg] illegal message, "
 				<< "no field named content.max_loop";
 		}
 	}
 
 	//get 和 set
 	//=============================================================
-	ecgraph::vertex_t get_controller_id() {
-		return m_controller_id;
+	ecgraph::vertex_t get_master_id() {
+		return m_master_id;
 	}
-	void set_controller_id(ecgraph::vertex_t controller_id) {
-		m_controller_id = controller_id;
+	void set_master_id(ecgraph::vertex_t master_id) {
+		m_master_id = master_id;
 	}
 
 	ecgraph::vertex_t get_msg_id() {
@@ -434,7 +434,7 @@ public:
 
 		//=======填充
 		pt.put("msg_id", std::to_string(m_msg_id));
-		pt.put("content.controller_id", std::to_string(m_controller_id));
+		pt.put("content.master_id", std::to_string(m_master_id));
 		pt.put("content.max_loop", std::to_string(m_max_loop));
 		//=======
 
@@ -445,34 +445,34 @@ public:
 };
 ///////////////////////////////////////////////////////////////////////////////
 
-class controller_end_one_iteration_msg : public base_message {
+class master_end_one_iteration_msg : public base_message {
 private:
-	ecgraph::vertex_t m_controller_id;
+	ecgraph::vertex_t m_master_id;
 public:
-	controller_end_one_iteration_msg() {
-		m_msg_id = CONTROLLER_END_ONE_ITERATION_MSGID;
+	master_end_one_iteration_msg() {
+		m_msg_id = MASTER_END_ONE_ITERATION_MSGID;
 	}
 	//从json 字符串中load
 	void load(std::string msg) {
 		base_message::load(msg);
-		assert(CONTROLLER_END_ONE_ITERATION_MSGID == m_msg_id);
+		assert(MASTER_END_ONE_ITERATION_MSGID == m_msg_id);
 		try {
-			m_controller_id = pt.get<ecgraph::vertex_t>("content.controller_id");
+			m_master_id = pt.get<ecgraph::vertex_t>("content.master_id");
 
 		}
 		catch (boost::property_tree::ptree_bad_path) {
-			LOG_TRIVIAL(error) << "[controller_end_all_msg] illegal message, "
-				<< "no field named content.controller_id";
+			LOG_TRIVIAL(error) << "[master_end_all_msg] illegal message, "
+				<< "no field named content.master_id";
 		}
 	}
 
 	//get 和 set
 	//=============================================================
-	ecgraph::vertex_t get_controller_id() {
-		return m_controller_id;
+	ecgraph::vertex_t get_master_id() {
+		return m_master_id;
 	}
-	void set_controller_id(ecgraph::vertex_t controller_id) {
-		m_controller_id = controller_id;
+	void set_master_id(ecgraph::vertex_t master_id) {
+		m_master_id = master_id;
 	}
 
 	ecgraph::vertex_t get_msg_id() {
@@ -485,7 +485,7 @@ public:
 
 		//=======填充
 		pt.put("msg_id", std::to_string(m_msg_id));
-		pt.put("content.controller_id", std::to_string(m_controller_id));
+		pt.put("content.master_id", std::to_string(m_master_id));
 		//=======
 
 		std::stringstream ss;

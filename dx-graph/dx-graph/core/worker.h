@@ -1,5 +1,5 @@
-#ifndef _COMPUTATION_H_
-#define _COMPUTATION_H_
+#ifndef _WORKER_H_
+#define _WORKER_H_
 
 #include <mpi.h>
 
@@ -33,9 +33,9 @@ using namespace boost;
 
 
 template <typename update_type>	//update_type 结构体必须含有id成员变量
-class computation {
+class worker {
 public:
-	computation(int argc,
+	worker(int argc,
 		char **argv,
 		int world_size, //当前集群中参与图处理节点的总数
 		int self_rank,
@@ -44,7 +44,7 @@ public:
 		ecgraph::buffer<update_type> *in_buffer*/
 		engine<update_type> *algorithm
 		);
-	computation() = delete;
+	worker() = delete;
 
 	//typedef format::vertex_t mpi_transport_datatype_t;
 
@@ -64,32 +64,32 @@ public:
 	//数据类型有：图数据，update，
 	//ring环信息，图数据信息
 	//控制信息
-	void compute_node_recv();
+	void worker_recv();
 	void handle_graph_data(ecgraph::byte_t * buf, int len);
 	void handle_update_data(ecgraph::byte_t * buf, int len);
 	void handle_hash_info_data(ecgraph::byte_t * buf, int len);
 	void handle_graph_info_data(ecgraph::byte_t * buf, int len);
 	void handle_graph_controll_data(ecgraph::byte_t * buf, int len);
 
-	void send_message_to_controller(base_message * msg, int controller_rank);
-	void send_message_to_controller(std::string json_msg, int conrroller_rank);
+	void send_message_to_master(base_message * msg, int master_rank);
+	void send_message_to_master(std::string json_msg, int conrroller_rank);
 	
 	//接收数据，可以是各种数据
 	void recv();
 
 	void start() {
-		//auto f_send = std::bind(&computation::send, this);
-		//auto f_recv = std::bind(&computation::send, this);
+		//auto f_send = std::bind(&worker::send, this);
+		//auto f_recv = std::bind(&worker::send, this);
 		//send_thrd = new std::thread(f_send);
 		//recv_thrd = new std::thread(f_recv);
-		//auto f_send = std::bind(&compute<update_type>::send, this);
+		//auto f_send = std::bind(&worker<update_type>::send, this);
 		//send_thrd = new std::thread(f_send);
-		//std::function<void(this)> f_send = std::bind(&compute<update_type>::send_update, this);
-		//compute_node_recv();
+		//std::function<void(this)> f_send = std::bind(&worker<update_type>::send_update, this);
+		//worker_recv();
 		recv();
 	}
 
-	~computation() {
+	~worker() {
 		/*if (send_thrd) {
 			if (send_thrd->joinable()) {
 				send_thrd->join();
@@ -113,8 +113,8 @@ public:
 
 	//=============处理具体控制消息===================================
 	int get_message_id(ecgraph::byte_t *buf, int len);
-	void handle_message(controller_permit_start_msg &msg);
-	void handle_message(controller_end_all_msg &msg);
+	void handle_message(master_permit_start_msg &msg);
+	void handle_message(master_end_all_msg &msg);
 	//void handle_message();
 
 	//=============处理具体控制消息end================================
@@ -190,7 +190,7 @@ private:
 };
 
 template <typename update_type>
-computation<update_type>::computation(int argc,
+worker<update_type>::worker(int argc,
 	char **argv,
 	int world_size, //当前集群中参与图处理节点的总数
 	int self_rank,
@@ -203,7 +203,7 @@ computation<update_type>::computation(int argc,
 	m_argv = argv;
 	m_world_size = world_size;
 	m_rank = self_rank;
-	m_node_type = NODE_TYPE::COMPUTE_NODE;
+	m_node_type = NODE_TYPE::WORKER_NODE;
 	m_node_state = NODE_STATE::BEFORE_START;	//初始化状态
 	m_ring = ring;
 	//m_out_buffer = out_buffer;
@@ -212,12 +212,12 @@ computation<update_type>::computation(int argc,
 	m_out_buffer = m_algorithm->get_out_buffer();
 	m_in_buffer = m_algorithm->get_in_buffer();
 
-	m_size = m_ring->compute_size() + 1;
+	m_size = m_ring->worker_size() + 1;
 	m_state_mutex = new std::mutex();
 	m_ring_mutex = new std::mutex();
 	//存计算节点的rank值
 
-	m_ring->get_machines(m_machines);
+	m_ring->get_workers(m_machines);
 
 	m_partition_edges_num = 0;
 	m_partition_mid_vid = -1;
@@ -231,29 +231,29 @@ computation<update_type>::computation(int argc,
 
 	m_start_time = -1; //无效值
 	m_end_time = -1;	//无效值
-	f_send = std::bind(&computation<update_type>::send_update, this);
+	f_send = std::bind(&worker<update_type>::send_update, this);
 	f_algorithm = std::bind(&engine<update_type>::iterate_once, m_algorithm);
 }
 
 
 template <typename update_type>
-void computation<update_type>::send_update() {
+void worker<update_type>::send_update() {
 
 	//断言，本函数只能运行在
-	assert(m_node_type == NODE_TYPE::COMPUTE_NODE
+	assert(m_node_type == NODE_TYPE::WORKER_NODE
 		&& m_node_state == NODE_STATE::IN_ITERATION);
 
 
 	//获得计算节点的数量
-	const int COMPUTE_SIZE = m_machines.size();
+	const int WORKER_SIZE = m_machines.size();
 
 	//断言，整个集群中有多台计算节点和一台控制节点
-	assert((COMPUTE_SIZE + 1) == m_size);
+	assert((WORKER_SIZE + 1) == m_size);
 
 	//存机器rank值到数组下标的映射，方便查找
 	std::map<ecgraph::vertex_t, int> machine_to_index;
 	std::map<int, ecgraph::vertex_t> index_to_machine;
-	for (int i = 0; i < COMPUTE_SIZE; i++) {//映射
+	for (int i = 0; i < WORKER_SIZE; i++) {//映射
 		machine_to_index[m_machines[i]] = i;
 		index_to_machine[i] = m_machines[i];
 	}
@@ -262,9 +262,9 @@ void computation<update_type>::send_update() {
 	//为什么要用new，是因为程序栈空间有限，另，暂存update_type必须是按字节对齐的。
 	//申请SEND_BUFFER_SIZE大小的读缓冲区
 	update_type* read_buf = new update_type[SEND_BUFFER_SIZE];
-	update_type** send_buf = new update_type*[COMPUTE_SIZE];
+	update_type** send_buf = new update_type*[WORKER_SIZE];
 
-	for (int i = 0; i < COMPUTE_SIZE; i++) {	//为其他计算节点申请缓存空间
+	for (int i = 0; i < WORKER_SIZE; i++) {	//为其他计算节点申请缓存空间
 		send_buf[i] = new update_type[SEND_BUFFER_SIZE];
 	}
 	//申请内存作为本机缓存end
@@ -272,16 +272,16 @@ void computation<update_type>::send_update() {
 	//从缓冲区中读取update到发送缓存中
 	bool go_on = true;
 	int readed_num;					//读取到的update的数量
-	MPI_Request *reqs = new MPI_Request[COMPUTE_SIZE];
-	MPI_Status *status = new MPI_Status[COMPUTE_SIZE];
+	MPI_Request *reqs = new MPI_Request[WORKER_SIZE];
+	MPI_Status *status = new MPI_Status[WORKER_SIZE];
 	//std::ofstream update_out("update_"+std::to_string(m_rank));
 	while (go_on) {
-		std::vector<int> length(COMPUTE_SIZE, 0);;	//保存每个缓冲区的数据存入的长度，初始值为0
+		std::vector<int> length(WORKER_SIZE, 0);;	//保存每个缓冲区的数据存入的长度，初始值为0
 		
 		if (!m_out_buffer->is_over()) { //未结束
 			readed_num = m_out_buffer->read(read_buf, SEND_BUFFER_SIZE);
 			//update_out.write((char *)read_buf, readed_num*sizeof(update_type));
-			LOG_TRIVIAL(info) << "compute node(" << m_rank << ") generates " 
+			LOG_TRIVIAL(info) << "worker node(" << m_rank << ") generates " 
 				<< readed_num << " updates";
 			
 			//没有读到任何update
@@ -319,7 +319,7 @@ void computation<update_type>::send_update() {
 				return;
 			}
 			int self_index = machine_to_index[m_rank];
-			for (int i = 0; i < COMPUTE_SIZE; i++) {
+			for (int i = 0; i < WORKER_SIZE; i++) {
 
 				//若为要发往本机的数据，则跳过
 				if (i == self_index) { my_flag = 1; continue; }
@@ -334,11 +334,11 @@ void computation<update_type>::send_update() {
 			}
 			//将发往本计算节点的缓冲区中的数据直接写入本机接收缓存
 			if (!m_in_buffer->push(send_buf[self_index], length[self_index])) {
-				LOG_TRIVIAL(error) << "compute node(" << m_rank << ") m_in_buffer should be reset";
+				LOG_TRIVIAL(error) << "worker(" << m_rank << ") m_in_buffer should be reset";
 				exit(0);
 			}
 			//等待所有发送都完成
-			MPI_Waitall(COMPUTE_SIZE - my_flag, reqs, status);
+			MPI_Waitall(WORKER_SIZE - my_flag, reqs, status);
 			//发送所有缓冲区中的数据end
 
 
@@ -346,30 +346,30 @@ void computation<update_type>::send_update() {
 		}
 		else {	//已结束
 			go_on = false;
-			LOG_TRIVIAL(info) << "compute node(" << m_rank << ") m_out_buffer is over";
+			LOG_TRIVIAL(info) << "worker(" << m_rank << ") m_out_buffer is over";
 			//发送一条消息给控制节点知晓
-			/*compute_node_stop_send_update_msg *msg
-				= new compute_node_stop_send_update_msg();
-			msg->set_compute_node_id(m_rank);
-			send_message_to_controller(msg, CONTROLLER_RANK);
+			/*worker_stop_send_update_msg *msg
+				= new worker_stop_send_update_msg();
+			msg->set_worker_id(m_rank);
+			send_message_to_master(msg, master_RANK);
 			delete msg;*/
 		}
 	}
 	//从缓冲区中读取update到发送缓存中end
 
 	
-	compute_node_stop_send_update_msg *msg 
-		= new compute_node_stop_send_update_msg();
-	msg->set_compute_node_id(m_rank);
-	send_message_to_controller(msg, CONTROLLER_RANK);
+	worker_stop_send_update_msg *msg
+		= new worker_stop_send_update_msg();
+	msg->set_worker_id(m_rank);
+	send_message_to_master(msg, MASTER_RANK);
 	delete msg;
-	LOG_TRIVIAL(info) << "compute node(" << m_rank << ") send stop send update msg ok";
+	LOG_TRIVIAL(info) << "worker(" << m_rank << ") send stop send update msg ok";
 
 	//设置结束时间
 	m_end_time = clock();
 	//释放缓存
 	delete [] read_buf;
-	for (int i = 0; i < COMPUTE_SIZE; i++) {	//为其他计算节点申请缓存空间
+	for (int i = 0; i < WORKER_SIZE; i++) {	//为其他计算节点申请缓存空间
 		delete[] send_buf[i];
 	}
 	delete[] send_buf;
@@ -380,7 +380,7 @@ void computation<update_type>::send_update() {
 
 //接收update的线程
 template<typename update_type>
-inline void computation<update_type>::recv_update()
+inline void worker<update_type>::recv_update()
 {
 	/*update_type *recv_buf = new update_type[RECV_BUFFER_SIZE];
 	MPI_Status  status;
@@ -398,10 +398,10 @@ inline void computation<update_type>::recv_update()
 
 
 template <typename update_type>
-void computation<update_type>::compute_node_recv() {
+void worker<update_type>::worker_recv() {
 
 	//断言，需要为计算节点
-	assert(m_node_type == NODE_TYPE::COMPUTE_NODE);
+	assert(m_node_type == NODE_TYPE::WORKER_NODE);
 
 	//申请接收数据的缓存
 	//update_type *update_buf = new update[IN_BUFFER_SIZE];//update缓存
@@ -456,7 +456,7 @@ void computation<update_type>::compute_node_recv() {
 		int count;  //接收的数据量
 		MPI_Get_count(&status, MPI_BYTE, &count);
 		#ifdef MY_DEBUG
-		LOG_TRIVIAL(info) << "compute node(" << m_rank << ") recv tag "<< status.MPI_TAG;
+		LOG_TRIVIAL(info) << "worker(" << m_rank << ") recv tag "<< status.MPI_TAG;
 		#endif
 
 
@@ -470,8 +470,8 @@ void computation<update_type>::compute_node_recv() {
 		case GRAPH_DATA_TAG:	//控制节点分发的图数据
 								//断言控制节点发的数据
 
-			if (status.MPI_SOURCE != CONTROLLER_RANK) {
-				LOG_TRIVIAL(info) << "This graph data is not sent by controller";
+			if (status.MPI_SOURCE != MASTER_RANK) {
+				LOG_TRIVIAL(info) << "This graph data is not sent by master";
 			}
 			else {
 				assert(NODE_STATE::DISTRIBUTING_GRAHP == m_node_state);
@@ -484,12 +484,12 @@ void computation<update_type>::compute_node_recv() {
 
 		case HASH_INFO_TAG:		//同步ring数据
 			//状态约束
-			assert(m_node_type == NODE_TYPE::COMPUTE_NODE
+			assert(m_node_type == NODE_TYPE::WORKER_NODE
 				&& (m_node_state == NODE_STATE::BEFORE_START
 					|| m_node_state == NODE_STATE::BETWEEN_TWO_ITERATION));
 
-				if (status.MPI_SOURCE != CONTROLLER_RANK) {
-					LOG_TRIVIAL(info) << "This ring info is not sent by controller";
+				if (status.MPI_SOURCE != MASTER_RANK) {
+					LOG_TRIVIAL(info) << "This ring info is not sent by master";
 				}
 				else {
 					
@@ -503,13 +503,13 @@ void computation<update_type>::compute_node_recv() {
 
 			case GRAPH_INFO_TAG:	//图元数据
 				//状态约束
-				assert(m_node_type == NODE_TYPE::COMPUTE_NODE
+				assert(m_node_type == NODE_TYPE::WORKER_NODE
 						&&(m_node_state == NODE_STATE::BEFORE_START
 							|| m_node_state == NODE_STATE::BETWEEN_TWO_ITERATION));
 
 
-				if (status.MPI_SOURCE != CONTROLLER_RANK) {
-					LOG_TRIVIAL(info) << "This graph info is not sent by controller";
+				if (status.MPI_SOURCE != MASTER_RANK) {
+					LOG_TRIVIAL(info) << "This graph info is not sent by master";
 				}
 				else {
 					handle_graph_info_data(recv_buf, count);
@@ -526,12 +526,12 @@ void computation<update_type>::compute_node_recv() {
 
 			case GRAPH_CONTROLL_TAG:	//控制节点发的控制信息
 
-				assert(m_node_type == NODE_TYPE::COMPUTE_NODE
+				assert(m_node_type == NODE_TYPE::WORKER_NODE
 					&& (m_node_state == NODE_STATE::FINISH_ITERATION
 						|| m_node_state == NODE_STATE::BETWEEN_TWO_ITERATION)
 						|| m_node_state == NODE_STATE::FINISH_DISTRIBUTED_GRAPH);
-				if (status.MPI_SOURCE != CONTROLLER_RANK) {
-					LOG_TRIVIAL(info) << "This controll message is not sent by controller";
+				if (status.MPI_SOURCE != MASTER_RANK) {
+					LOG_TRIVIAL(info) << "This controll message is not sent by master";
 				}
 				else {
 					//set_current_state(NODE_STATE::FINISH_DISTRIBUTED_GRAPH);
@@ -544,7 +544,7 @@ void computation<update_type>::compute_node_recv() {
 				//结束接收数据
 				go_on = false;
 				#ifdef MY_DEBUG
-				LOG_TRIVIAL(info) << "compute node(" << m_rank << ") end";
+				LOG_TRIVIAL(info) << "worker(" << m_rank << ") end";
 				#endif
 				break;
 
@@ -568,16 +568,16 @@ void computation<update_type>::compute_node_recv() {
 
 
 template<typename update_type>
-void computation<update_type>::handle_graph_data(ecgraph::byte_t * buf, int len)
+void worker<update_type>::handle_graph_data(ecgraph::byte_t * buf, int len)
 {
 	//接收的长度必须为sizeof(update_type)的整数倍
 	assert(len%sizeof(ecgraph::edge_t) == 0);
-	assert(m_node_type == NODE_TYPE::COMPUTE_NODE &&
+	assert(m_node_type == NODE_TYPE::WORKER_NODE &&
 			m_node_state == NODE_STATE::DISTRIBUTING_GRAHP);
 
 	//放入in_buffer中
 	/*#ifdef MY_DEBUG
-	LOG_TRIVIAL(info) << "compute node(" << m_rank << ") receiving";
+	LOG_TRIVIAL(info) << "worker(" << m_rank << ") receiving";
 	#endif*/
 	ecgraph::edge_t *edge_buf = (ecgraph::edge_t *)(buf);
 	int edge_len = len / sizeof(ecgraph::edge_t);
@@ -591,12 +591,12 @@ void computation<update_type>::handle_graph_data(ecgraph::byte_t * buf, int len)
 		//将收到的图数据写入
 		m_graph_partition->write((char *)buf, len);
 		/*#ifdef MY_DEBUG
-		LOG_TRIVIAL(info) <<"compute node("<<m_rank 
+		LOG_TRIVIAL(info) <<"worker("<<m_rank 
 							<< ") writing "<< m_partition_edges_num<< " edges";
 		#endif*/
 	}
 	else {
-		LOG_TRIVIAL(error) <<"compute node ("<<m_rank<< ") the file "
+		LOG_TRIVIAL(error) <<"worker ("<<m_rank<< ") the file "
 			<< m_partition_filename << " is not opened";
 		return;
 	}
@@ -605,35 +605,35 @@ void computation<update_type>::handle_graph_data(ecgraph::byte_t * buf, int len)
 
 //处理接收到的更新
 template<typename update_type>
-void computation<update_type>::handle_update_data(ecgraph::byte_t * buf, int len)
+void worker<update_type>::handle_update_data(ecgraph::byte_t * buf, int len)
 {
 	//接收的长度必须为sizeof(update_type)的整数倍
 	assert(len % sizeof(update_type) == 0);
-	assert(m_node_type == NODE_TYPE::COMPUTE_NODE
+	assert(m_node_type == NODE_TYPE::WORKER_NODE
 			&& m_node_state == NODE_STATE::IN_ITERATION);
 
 	//放入in_buffer中
 	
 	update_type *update_buf = (update_type *)(buf);
 	int update_len = len / sizeof(update_type);
-	LOG_TRIVIAL(info) << "compute node(" << m_rank << ") received updates " << update_len;
+	LOG_TRIVIAL(info) << "worker(" << m_rank << ") received updates " << update_len;
 	if (!m_in_buffer->push(update_buf, update_len)) {
-		LOG_TRIVIAL(error) << "compute node(" << m_rank << ") m_in_buffer should be reset";
+		LOG_TRIVIAL(error) << "worker(" << m_rank << ") m_in_buffer should be reset";
 		exit(0);
 	}
 }
 
 
 template<typename update_type>
-void computation<update_type>::handle_hash_info_data(ecgraph::byte_t * buf, int len)
+void worker<update_type>::handle_hash_info_data(ecgraph::byte_t * buf, int len)
 {
-	assert(m_node_type == NODE_TYPE::COMPUTE_NODE 
+	assert(m_node_type == NODE_TYPE::WORKER_NODE 
 			&& (m_node_state == NODE_STATE::BEFORE_START
 				|| m_node_state == NODE_STATE::IN_ITERATION));
 	//更新本机ring环所有信息
 	//TODO
 	#ifdef MY_DEBUG
-	LOG_TRIVIAL(info) << "compute node(" << m_rank << ") recv ring meta data: "
+	LOG_TRIVIAL(info) << "worker(" << m_rank << ") recv ring meta data: "
 		<< std::string((char *)buf, len);
 	#endif
 
@@ -645,13 +645,13 @@ void computation<update_type>::handle_hash_info_data(ecgraph::byte_t * buf, int 
 
 //必须在发完图数据前接收该信息
 template<typename update_type>
-void computation<update_type>::handle_graph_info_data(ecgraph::byte_t * buf, int len)
+void worker<update_type>::handle_graph_info_data(ecgraph::byte_t * buf, int len)
 {
-	assert(m_node_type == NODE_TYPE::COMPUTE_NODE 
+	assert(m_node_type == NODE_TYPE::WORKER_NODE 
 			&& m_node_state == NODE_STATE::BEFORE_START);
 	
 	#ifdef MY_DEBUG
-	LOG_TRIVIAL(info) <<"compute node("<< m_rank << ") recv graph meta data: "
+	LOG_TRIVIAL(info) <<"worker("<< m_rank << ") recv graph meta data: "
 						<<std::string((char *)buf, len);
 	#endif
 	
@@ -669,7 +669,7 @@ void computation<update_type>::handle_graph_info_data(ecgraph::byte_t * buf, int
 	m_partition_filename = (*m_partition_config)["name"];
 
 	#ifdef MY_DEBUG
-	LOG_TRIVIAL(info) <<"compute node(" << m_rank<< ") my partition name " << m_partition_filename;
+	LOG_TRIVIAL(info) <<"worker(" << m_rank<< ") my partition name " << m_partition_filename;
 	#endif
 	
 	if (!m_graph_partition->is_open()) {
@@ -706,9 +706,9 @@ void computation<update_type>::handle_graph_info_data(ecgraph::byte_t * buf, int
 }
 
 template<typename update_type>
-void computation<update_type>::handle_graph_controll_data(ecgraph::byte_t * buf, int len)
+void worker<update_type>::handle_graph_controll_data(ecgraph::byte_t * buf, int len)
 {
-	assert(m_node_type == NODE_TYPE::COMPUTE_NODE);
+	assert(m_node_type == NODE_TYPE::WORKER_NODE);
 	//处理控制节点发过来的控制消息
 
 	//首先获取msg_id
@@ -719,16 +719,16 @@ void computation<update_type>::handle_graph_controll_data(ecgraph::byte_t * buf,
 		return;
 	}
 	switch (msg_id) {
-		case CONTROLLER_PERMIT_START_MSGID:
+		case MASTER_PERMIT_START_MSGID:
 		{
-			controller_permit_start_msg msg;
+			master_permit_start_msg msg;
 			msg.load(std::string(buf, len));
 			handle_message(msg);
 			break;
 		}
-		case CONTROLLER_END_ALL_MSGID:
+		case MASTER_END_ALL_MSGID:
 		{
-			controller_end_all_msg msg;
+			master_end_all_msg msg;
 			msg.load(std::string(buf, len));
 			handle_message(msg);
 		}
@@ -739,32 +739,32 @@ void computation<update_type>::handle_graph_controll_data(ecgraph::byte_t * buf,
 }
 
 template<typename update_type>
-inline void computation<update_type>::send_message_to_controller(base_message * msg, int controller_rank)
+inline void worker<update_type>::send_message_to_master(base_message * msg, int master_rank)
 {
 	std::string json_msg = msg->serialize();
-	send_message_to_controller(json_msg, controller_rank);
+	send_message_to_master(json_msg, master_rank);
 }
 
 template<typename update_type>
-inline void computation<update_type>::send_message_to_controller(std::string json_msg, int controller_rank)
+inline void worker<update_type>::send_message_to_master(std::string json_msg, int master_rank)
 {
 	//判断rank的合法性
 	//存计算节点的rank值
-	//auto iter = std::find(m_machines.begin(), m_machines.end(), controller_rank);
+	//auto iter = std::find(m_machines.begin(), m_machines.end(), master_rank);
 	//if (iter == m_machines.end()) {
-		//LOG_TRIVIAL(warn) << "[send_message_to_controller]the controll message destination does not exist";
+		//LOG_TRIVIAL(warn) << "[send_message_to_master]the controll message destination does not exist";
 		//return;
 	//}
 	MPI_Send((void *)json_msg.c_str(), json_msg.size(),
-		MPI_BYTE, controller_rank,
+		MPI_BYTE, master_rank,
 		GRAPH_CONTROLL_TAG, MPI_COMM_WORLD);
 }
 
 template<typename update_type>
-void computation<update_type>::recv()
+void worker<update_type>::recv()
 {
 	//断言，需要为计算节点
-	assert(m_node_type == NODE_TYPE::COMPUTE_NODE);
+	assert(m_node_type == NODE_TYPE::WORKER_NODE);
 
 	bool go_on = true;
 	ecgraph::byte_t *recv_buf = new ecgraph::byte_t[RECV_BUFFER_SIZE];
@@ -777,7 +777,7 @@ void computation<update_type>::recv()
 		case NODE_STATE::BEFORE_START:
 		{
 			#ifdef MY_DEBUG
-			LOG_TRIVIAL(info) << "compute node(" << m_rank << ") in BEFORE_START";
+			LOG_TRIVIAL(info) << "worker(" << m_rank << ") in BEFORE_START";
 			#endif
 
 			bool next = true;
@@ -791,7 +791,7 @@ void computation<update_type>::recv()
 				int count;  //接收的数据量
 				MPI_Get_count(&status, MPI_BYTE, &count);
 
-				assert(status.MPI_SOURCE == CONTROLLER_RANK);
+				assert(status.MPI_SOURCE == MASTER_RANK);
 				switch (status.MPI_TAG)
 				{
 				case HASH_INFO_TAG:
@@ -810,11 +810,11 @@ void computation<update_type>::recv()
 				case GRAPH_CONTROLL_TAG: //设置状态消息
 				{
 					if (get_message_id(recv_buf, count)
-						!= CONTROLLER_CHANGE_COMPUTE_NODE_STATE_MSGID) {
+						!= MASTER_CHANGE_WORKER_STATE_MSGID) {
 						LOG_TRIVIAL(warn) << "expect a change state message";
 						continue;
 					}
-					controller_change_compute_node_state_msg msg;
+					master_change_worker_state_msg msg;
 					msg.load(std::string((char *)recv_buf, count));
 					set_current_state((NODE_STATE)msg.get_state_index());
 					next = false;
@@ -827,7 +827,7 @@ void computation<update_type>::recv()
 			}
 			
 			#ifdef MY_DEBUG
-			LOG_TRIVIAL(info) << "compute node(" << m_rank << ") out BEFORE_START";
+			LOG_TRIVIAL(info) << "worker(" << m_rank << ") out BEFORE_START";
 			#endif
 			break;
 		}
@@ -837,7 +837,7 @@ void computation<update_type>::recv()
 		case NODE_STATE::DISTRIBUTING_GRAHP:
 		{
 			#ifdef MY_DEBUG
-			LOG_TRIVIAL(info) << "compute node(" << m_rank << ") in DISTRIBUTING_GRAHP";
+			LOG_TRIVIAL(info) << "worker(" << m_rank << ") in DISTRIBUTING_GRAHP";
 			#endif
 
 			bool next = true;
@@ -850,7 +850,7 @@ void computation<update_type>::recv()
 				//处理数据
 				int count;  //接收的数据量
 				MPI_Get_count(&status, MPI_BYTE, &count);
-				assert(status.MPI_SOURCE == CONTROLLER_RANK);//控制节点
+				assert(status.MPI_SOURCE == MASTER_RANK);//控制节点
 				switch (status.MPI_TAG)
 				{
 				case GRAPH_DATA_TAG:
@@ -861,13 +861,13 @@ void computation<update_type>::recv()
 				case GRAPH_CONTROLL_TAG:
 				{
 					if (get_message_id(recv_buf, count)
-						!= CONTROLLER_CHANGE_COMPUTE_NODE_STATE_MSGID) {
-						LOG_TRIVIAL(warn) << "compute node(" << m_rank 
+						!= MASTER_CHANGE_WORKER_STATE_MSGID) {
+						LOG_TRIVIAL(warn) << "worker(" << m_rank 
 							<< ") expect a change state message";
 						continue;
 					}
 					//LOG_TRIVAIL
-					controller_change_compute_node_state_msg msg;
+					master_change_worker_state_msg msg;
 					msg.load(std::string((char *)recv_buf, count));
 					set_current_state((NODE_STATE)msg.get_state_index());
 
@@ -877,13 +877,13 @@ void computation<update_type>::recv()
 					break;
 				}
 				default:
-					LOG_TRIVIAL(warn) << "compute node(" << m_rank 
+					LOG_TRIVIAL(warn) << "worker(" << m_rank 
 						<< ") [DISTRIBUTING_GRAHP]not an expected message";
 					break;
 				}
 			}
 			#ifdef MY_DEBUG
-			LOG_TRIVIAL(info) << "compute node(" << m_rank << ") out DISTRIBUTING_GRAHP";
+			LOG_TRIVIAL(info) << "worker(" << m_rank << ") out DISTRIBUTING_GRAHP";
 			#endif
 			break;
 		}
@@ -892,7 +892,7 @@ void computation<update_type>::recv()
 		case NODE_STATE::FINISH_DISTRIBUTED_GRAPH:
 		{
 			#ifdef MY_DEBUG
-			LOG_TRIVIAL(info) << "compute node(" << m_rank << ") in FINISH_DISTRIBUTED_GRAPH";
+			LOG_TRIVIAL(info) << "worker(" << m_rank << ") in FINISH_DISTRIBUTED_GRAPH";
 			#endif
 			//首先关掉m_graph_partition
 			m_graph_partition->close();
@@ -912,18 +912,18 @@ void computation<update_type>::recv()
 				//处理数据
 				int count;  //接收的数据量
 				MPI_Get_count(&status, MPI_BYTE, &count);
-				assert(status.MPI_SOURCE == CONTROLLER_RANK);//控制节点
+				assert(status.MPI_SOURCE == MASTER_RANK);//控制节点
 				switch (status.MPI_TAG)
 				{
 				case GRAPH_CONTROLL_TAG:
 				{	
 					if (get_message_id(recv_buf, count)
-					!= CONTROLLER_CHANGE_COMPUTE_NODE_STATE_MSGID) {
+					!= MASTER_CHANGE_WORKER_STATE_MSGID) {
 					LOG_TRIVIAL(warn) << "expect a change state message";
 					continue;
 					}
 
-					controller_change_compute_node_state_msg msg;
+					master_change_worker_state_msg msg;
 					//装载消息
 					msg.load(std::string((char *)recv_buf, count));
 					//设置状态
@@ -938,7 +938,7 @@ void computation<update_type>::recv()
 			}
 			
 			#ifdef MY_DEBUG
-			LOG_TRIVIAL(info) << "compute node(" << m_rank << ") out FINISH_DISTRIBUTED_GRAPH";
+			LOG_TRIVIAL(info) << "worker(" << m_rank << ") out FINISH_DISTRIBUTED_GRAPH";
 			#endif
 			break;
 		}
@@ -947,7 +947,7 @@ void computation<update_type>::recv()
 		case NODE_STATE::IN_ITERATION:
 		{
 			#ifdef MY_DEBUG
-			LOG_TRIVIAL(info) << "compute node(" << m_rank << ") in IN_ITERATION";
+			LOG_TRIVIAL(info) << "worker(" << m_rank << ") in IN_ITERATION";
 			#endif
 			bool next = true;
 			while (next) {
@@ -973,10 +973,10 @@ void computation<update_type>::recv()
 					case GRAPH_CONTROLL_TAG:
 					{
 						
-						assert(status.MPI_SOURCE == CONTROLLER_RANK);//控制节点
+						assert(status.MPI_SOURCE == MASTER_RANK);//控制节点
 						int msg_id = get_message_id(recv_buf, count);
 						/*#ifdef MY_DEBUG
-						LOG_TRIVIAL(info) << "compute node(" << m_rank
+						LOG_TRIVIAL(info) << "worker(" << m_rank
 							<< ") received controll msg, msg id: "<<msg_id;
 						#endif */
 
@@ -985,12 +985,12 @@ void computation<update_type>::recv()
 						}
 						
 						//可以作为一轮迭代开始标志
-						if (msg_id == CONTROLLER_PERMIT_START_MSGID) {
+						if (msg_id == MASTER_PERMIT_START_MSGID) {
 							//LOG_TRIVIAL(warn) << "expect a permit start message";
 							//开始进行一轮迭代,迭代完成后向控制节点发消息
 							//TODO
 							#ifdef MY_DEBUG
-							LOG_TRIVIAL(info) << "compute node(" << m_rank 
+							LOG_TRIVIAL(info) << "worker(" << m_rank 
 								<< ") is permitted to start";
 							#endif 
 
@@ -1005,15 +1005,15 @@ void computation<update_type>::recv()
 							//下面两行程序顺序不要换
 							graph_thrd = new std::thread(f_algorithm);
 							send_thrd = new std::thread(f_send);
-							//LOG_TRIVIAL(info) << "compute node(" << m_rank << ") algorithm info";
+							//LOG_TRIVIAL(info) << "worker(" << m_rank << ") algorithm info";
 							//m_algorithm->show_graph_info();
 							
 							
 							
-							//LOG_TRIVIAL(info) << "compute node(" << m_rank << ") end iteration";
+							//LOG_TRIVIAL(info) << "worker(" << m_rank << ") end iteration";
 							//while (1) {}
 						}
-						else if (msg_id == CONTROLLER_CHANGE_COMPUTE_NODE_STATE_MSGID) {
+						else if (msg_id == MASTER_CHANGE_WORKER_STATE_MSGID) {
 						//可以作为一轮迭代的结束标志
 							//等待结束，释放new出来的变量
 							if (send_thrd->joinable()) {
@@ -1030,10 +1030,10 @@ void computation<update_type>::recv()
 								delete graph_thrd;
 								graph_thrd = NULL;
 							}
-							LOG_TRIVIAL(info) << "compute node(" 
+							LOG_TRIVIAL(info) << "worker(" 
 								<< m_rank << ") recv change state msg";
 							
-							controller_change_compute_node_state_msg msg;
+							master_change_worker_state_msg msg;
 							msg.load(std::string((char *)recv_buf, count));
 							//设置状态
 							set_current_state((NODE_STATE)msg.get_state_index());
@@ -1047,7 +1047,7 @@ void computation<update_type>::recv()
 
 					default:
 					{
-						LOG_TRIVIAL(warn) <<"compute node("<<m_rank
+						LOG_TRIVIAL(warn) <<"worker("<<m_rank
 							<<")[IN_ITERATION]not an expected message."
 							<<" TAG "<< status.MPI_TAG;
 						break;
@@ -1055,7 +1055,7 @@ void computation<update_type>::recv()
 				}
 			}
 			#ifdef MY_DEBUG
-			LOG_TRIVIAL(info) << "compute node(" << m_rank << ") out IN_ITERATION";
+			LOG_TRIVIAL(info) << "worker(" << m_rank << ") out IN_ITERATION";
 			#endif
 			break;
 		}
@@ -1064,21 +1064,21 @@ void computation<update_type>::recv()
 		case NODE_STATE::BETWEEN_TWO_ITERATION:
 		{
 			#ifdef MY_DEBUG
-			LOG_TRIVIAL(info) << "compute node(" << m_rank << ") in BETWEEN_TWO_ITERATION";
+			LOG_TRIVIAL(info) << "worker(" << m_rank << ") in BETWEEN_TWO_ITERATION";
 			#endif
 
 
 			//等待计算节点将自己一轮迭代的一些运行消息发送过来。
-			compute_node_runtime_info_msg *msg
-				= new compute_node_runtime_info_msg();
-			msg->set_compute_node_id(m_rank);
+			worker_runtime_info_msg *msg
+				= new worker_runtime_info_msg();
+			msg->set_worker_id(m_rank);
 			msg->set_current_loop(m_algorithm->get_current_step());
 			//msg->set_current_loop(5);
 			//msg->set_max_loop(10);
 
 			msg->set_run_time(((double)(m_end_time - m_start_time))/ CLOCKS_PER_SEC);
 
-			send_message_to_controller(msg, CONTROLLER_RANK);
+			send_message_to_master(msg, MASTER_RANK);
 			m_start_time = -1;
 			m_end_time = -1;
 			
@@ -1101,7 +1101,7 @@ void computation<update_type>::recv()
 					//通信，等分裂完了就告知控制节点，控制节点更新全局ring环信息
 					case GRAPH_CONTROLL_TAG:
 					{
-						assert(status.MPI_SOURCE == CONTROLLER_RANK);//控制节点
+						assert(status.MPI_SOURCE == MASTER_RANK);//控制节点
 						int msg_id = get_message_id(recv_buf, count);
 
 						if (msg_id < 0 || (msg_id >= 0 && msg_id <= 999)) {
@@ -1109,8 +1109,8 @@ void computation<update_type>::recv()
 						}
 
 						//可以作为一轮迭代开始标志
-						if (msg_id == CONTROLLER_CHANGE_COMPUTE_NODE_STATE_MSGID) {
-							controller_change_compute_node_state_msg msg;
+						if (msg_id == MASTER_CHANGE_WORKER_STATE_MSGID) {
+							master_change_worker_state_msg msg;
 							msg.load(std::string((char *)recv_buf, count));
 							//设置状态
 							set_current_state((NODE_STATE)msg.get_state_index());
@@ -1129,7 +1129,7 @@ void computation<update_type>::recv()
 				}
 				}
 			#ifdef MY_DEBUG
-			LOG_TRIVIAL(info) << "compute node(" << m_rank << ") out BETWEEN_TWO_ITERATION";
+			LOG_TRIVIAL(info) << "worker(" << m_rank << ") out BETWEEN_TWO_ITERATION";
 			#endif
 			break;
 		}
@@ -1137,22 +1137,22 @@ void computation<update_type>::recv()
 		case NODE_STATE::FINISH_ITERATION:
 		{
 			#ifdef MY_DEBUG
-			LOG_TRIVIAL(info) << "compute node(" << m_rank << ") in FINISH_ITERATION";
+			LOG_TRIVIAL(info) << "worker(" << m_rank << ") in FINISH_ITERATION";
 			#endif
 			m_algorithm->output();
 			set_current_state(NODE_STATE::FINISH_ALL);
 			#ifdef MY_DEBUG
-			LOG_TRIVIAL(info) << "compute node(" << m_rank << ") out FINISH_ITERATION";
+			LOG_TRIVIAL(info) << "worker(" << m_rank << ") out FINISH_ITERATION";
 			#endif
 			break;
 		}
 		case NODE_STATE::FINISH_ALL:
 		{
 			#ifdef MY_DEBUG
-			LOG_TRIVIAL(info) << "compute node(" << m_rank << ") in FINISH_ALL";
+			LOG_TRIVIAL(info) << "worker(" << m_rank << ") in FINISH_ALL";
 			#endif
 			#ifdef MY_DEBUG
-			LOG_TRIVIAL(info) << "compute node(" << m_rank << ") out FINISH_ALL";
+			LOG_TRIVIAL(info) << "worker(" << m_rank << ") out FINISH_ALL";
 			#endif
 			go_on = false;
 			break;
@@ -1162,7 +1162,7 @@ void computation<update_type>::recv()
 }
 
 template<typename update_type>
-inline int computation<update_type>::get_message_id(ecgraph::byte_t * buf, int len)
+inline int worker<update_type>::get_message_id(ecgraph::byte_t * buf, int len)
 {
 	ptree pt;
 	std::stringstream ss;
@@ -1181,10 +1181,10 @@ inline int computation<update_type>::get_message_id(ecgraph::byte_t * buf, int l
 
 //收到这条消息之后开始进行迭代
 template<typename update_type>
-void computation<update_type>::handle_message(controller_permit_start_msg & msg)
+void worker<update_type>::handle_message(master_permit_start_msg & msg)
 {
 	#ifdef MY_DEBUG
-	LOG_TRIVIAL(info) << "received message controller_permit_start_msg";
+	LOG_TRIVIAL(info) << "received message master_permit_start_msg";
 	#endif
 	set_current_state(NODE_STATE::IN_ITERATION);
 
@@ -1193,10 +1193,10 @@ void computation<update_type>::handle_message(controller_permit_start_msg & msg)
 
 //暂时还没有任何屁用
 template<typename update_type>
-inline void computation<update_type>::handle_message(controller_end_all_msg & msg)
+inline void worker<update_type>::handle_message(master_end_all_msg & msg)
 {
 	#ifdef MY_DEBUG
-	LOG_TRIVIAL(info) << "received message controller_end_all_msg";
+	LOG_TRIVIAL(info) << "received message master_end_all_msg";
 	#endif
 	
 	set_current_state(NODE_STATE::FINISH_ALL);
