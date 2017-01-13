@@ -70,7 +70,7 @@ public:
 	
 	//发送结束信息
 	void end_all();
-	void master_start();
+	//void master_start();
 	void go();
 	void set_all_worker_state(NODE_STATE state);
 	//消息以json的形式发过来
@@ -265,7 +265,22 @@ void master::end_all()
 	//|| m_node_state == NODE_STATE::BETWEEN_TWO_ITERATION);
 
 	char buf[] = "end";
-	send_to_all_node((void *)buf, sizeof(buf), END_TAG);
+	//send_to_all_node((void *)buf, sizeof(buf), END_TAG);
+	MPI_Request *reqs = new MPI_Request[m_world_size-1];
+
+	//发送数据
+	for (int i = 1; i < m_world_size; i++) {
+		MPI_Isend((void *)(buf),
+			sizeof(buf),
+			MPI_BYTE,
+			i,
+			END_TAG,
+			MPI_COMM_WORLD,
+			&reqs[i-1]);
+	}
+	//等待所有发送都完成
+	MPI_Waitall(m_world_size - 1, reqs, MPI_STATUS_IGNORE);
+	delete reqs;
 }
 
 void master::send_partition_info() {
@@ -503,118 +518,6 @@ void master::handle_graph_controll_data(ecgraph::byte_t * buf, int len)
 
 
 
-void master::master_start() {
-	bool go_on = true;
-	while (go_on) { //状态不为未完成，则继续
-		switch (get_current_state()) {
-
-			//在开始之前要发送图元数据分区信息，图元数据包括分区的一切信息
-			case NODE_STATE::BEFORE_START:
-			{
-				#ifdef MY_DEBUG
-				LOG_TRIVIAL(info) << "master(" << m_rank << ") in BEFORE_START";
-				#endif
-
-				//同步ring环信息
-				sync_ring_info();
-
-				//发送图分区信息
-				send_partition_info();
-
-				//改变状态
-				set_current_state(NODE_STATE::DISTRIBUTING_GRAHP);
-				#ifdef MY_DEBUG
-				LOG_TRIVIAL(info) << "master(" << m_rank << ") out BEFORE_START";
-				#endif
-				break;
-			}
-
-
-				//分发图数据中
-			case NODE_STATE::DISTRIBUTING_GRAHP:
-			{
-				#ifdef MY_DEBUG
-				LOG_TRIVIAL(info) << "master(" << m_rank << ") in DISTRIBUTING_GRAHP";
-				#endif
-				distributing_graph();
-				set_current_state(NODE_STATE::FINISH_DISTRIBUTED_GRAPH);
-				#ifdef MY_DEBUG
-				LOG_TRIVIAL(info) << "master(" << m_rank << ") out DISTRIBUTING_GRAHP";
-				#endif
-				break;
-			}
-
-				//完成图数据的分发
-			case NODE_STATE::FINISH_DISTRIBUTED_GRAPH:
-			{	
-				#ifdef MY_DEBUG
-				LOG_TRIVIAL(info) << "master(" << m_rank << ") in FINISH_DISTRIBUTED_GRAPH";
-				#endif
-
-				
-				
-				//进入IN_ITERATION
-				set_current_state(NODE_STATE::IN_ITERATION);
-				#ifdef MY_DEBUG
-				LOG_TRIVIAL(info) << "master(" << m_rank << ") out FINISH_DISTRIBUTED_GRAPH";
-				#endif
-				break;
-			}
-				
-				//在迭代中
-			case NODE_STATE::IN_ITERATION:
-			{	
-				#ifdef MY_DEBUG
-				LOG_TRIVIAL(info) << "master(" << m_rank << ") in IN_ITERATION";
-				#endif
-				//发送给所有的计算节点一个控制信息，使其开始进行迭代, 
-				//计算节点收到该消息后进入IN_ITERATION状态，并开始迭代
-				master_permit_start_msg *msg = new master_permit_start_msg();
-				msg->set_master_id(m_rank);
-				broadcast_msg_to_all(msg);
-				delete msg;
-
-				//进入BETWEEN_TWO_ITERATION状态
-				set_current_state(NODE_STATE::BETWEEN_TWO_ITERATION);
-				#ifdef MY_DEBUG
-				LOG_TRIVIAL(info) << "master(" << m_rank << ") out IN_ITERATION";
-				#endif
-				break;
-			}
-			
-				//两轮迭代之间
-			case NODE_STATE::BETWEEN_TWO_ITERATION:
-			{
-				
-				//等待计算节点将自己一轮迭代的一些运行消息发送过来。
-				recv_msg_from_worker();
-				break;
-			}
-				//完成迭代
-			case NODE_STATE::FINISH_ITERATION:
-			{
-				set_current_state(NODE_STATE::FINISH_ALL);
-				break;
-			}
-			case NODE_STATE::FINISH_ALL:
-			{	
-				#ifdef MY_DEBUG
-				LOG_TRIVIAL(info) << "master(" << m_rank << ") in FINISH_ALL";
-				#endif
-				end_all();
-				#ifdef MY_DEBUG
-				LOG_TRIVIAL(info) << "master(" << m_rank << ") end all";
-				#endif
-				#ifdef MY_DEBUG
-				LOG_TRIVIAL(info) << "master(" << m_rank << ") out FINISH_ALL";
-				#endif
-				go_on = false;
-				break;
-			}
-		}
-	}
-}
-
 void master::go()
 {
 	bool go_on = true;
@@ -771,7 +674,15 @@ void master::go()
 				#ifdef MY_DEBUG
 				LOG_TRIVIAL(info) << "master(" << m_rank << ") in FINISH_ITERATION";
 				#endif
+				
+
+				//结束整个集群
+				end_all();
 				set_current_state(NODE_STATE::FINISH_ALL);
+
+				#ifdef MY_DEBUG
+				LOG_TRIVIAL(info) << "master(" << m_rank << ") end all";
+				#endif
 				#ifdef MY_DEBUG
 				LOG_TRIVIAL(info) << "master(" << m_rank << ") out FINISH_ITERATION";
 				#endif
@@ -783,9 +694,6 @@ void master::go()
 				LOG_TRIVIAL(info) << "master(" << m_rank << ") in FINISH_ALL";
 				#endif
 				//end_all();
-				#ifdef MY_DEBUG
-				LOG_TRIVIAL(info) << "master(" << m_rank << ") end all";
-				#endif
 				#ifdef MY_DEBUG
 				LOG_TRIVIAL(info) << "master(" << m_rank << ") out FINISH_ALL";
 				#endif

@@ -39,8 +39,8 @@ public:
 		char **argv,
 		int world_size, //当前集群中参与图处理节点的总数
 		int self_rank,
-		ecgraph::consistent_hash *ring,
-		/*ecgraph::buffer<update_type> *out_buffer,
+		/*ecgraph::consistent_hash *ring,
+		ecgraph::buffer<update_type> *out_buffer,
 		ecgraph::buffer<update_type> *in_buffer*/
 		engine<update_type> *algorithm
 		);
@@ -108,6 +108,8 @@ public:
 		delete m_state_mutex;
 		delete m_ring_mutex;
 		delete m_graph_partition;
+		delete m_ring;
+		delete m_partition_config;
 	}
 
 
@@ -194,8 +196,8 @@ worker<update_type>::worker(int argc,
 	char **argv,
 	int world_size, //当前集群中参与图处理节点的总数
 	int self_rank,
-	ecgraph::consistent_hash *ring,
-	/*ecgraph::buffer<update_type> *out_buffer,
+	/*ecgraph::consistent_hash *ring,
+	ecgraph::buffer<update_type> *out_buffer,
 	ecgraph::buffer<update_type> *in_buffer,*/
 	engine<update_type> *algorithm
 	) {
@@ -205,26 +207,26 @@ worker<update_type>::worker(int argc,
 	m_rank = self_rank;
 	m_node_type = NODE_TYPE::WORKER_NODE;
 	m_node_state = NODE_STATE::BEFORE_START;	//初始化状态
-	m_ring = ring;
+	m_ring = new ecgraph::consistent_hash();
 	//m_out_buffer = out_buffer;
 	//m_in_buffer = in_buffer;
 	m_algorithm = algorithm;
 	m_out_buffer = m_algorithm->get_out_buffer();
 	m_in_buffer = m_algorithm->get_in_buffer();
 
-	m_size = m_ring->worker_size() + 1;
+	
 	m_state_mutex = new std::mutex();
 	m_ring_mutex = new std::mutex();
 	//存计算节点的rank值
 
-	m_ring->get_workers(m_machines);
+	
 
 	m_partition_edges_num = 0;
 	m_partition_mid_vid = -1;
 
 	m_graph_partition = new std::fstream();
-	m_partition_config = m_ring->get_graphdata_ptr()->get_config_ptr();
-	
+	m_partition_config = new ecgraph::config() ;
+	m_size = 0;
 
 	//本计算节点接收到控制节点发的结束message时，将其置为1
 	m_in_buffer_close_flag = -1;
@@ -281,8 +283,8 @@ void worker<update_type>::send_update() {
 		if (!m_out_buffer->is_over()) { //未结束
 			readed_num = m_out_buffer->read(read_buf, SEND_BUFFER_SIZE);
 			//update_out.write((char *)read_buf, readed_num*sizeof(update_type));
-			LOG_TRIVIAL(info) << "worker node(" << m_rank << ") generates " 
-				<< readed_num << " updates";
+			//LOG_TRIVIAL(info) << "worker(" << m_rank << ") generates " 
+				//<< readed_num << " updates";
 			
 			//没有读到任何update
 			if (readed_num == 0) {
@@ -616,7 +618,7 @@ void worker<update_type>::handle_update_data(ecgraph::byte_t * buf, int len)
 	
 	update_type *update_buf = (update_type *)(buf);
 	int update_len = len / sizeof(update_type);
-	LOG_TRIVIAL(info) << "worker(" << m_rank << ") received updates " << update_len;
+	//LOG_TRIVIAL(info) << "worker(" << m_rank << ") received updates " << update_len;
 	if (!m_in_buffer->push(update_buf, update_len)) {
 		LOG_TRIVIAL(error) << "worker(" << m_rank << ") m_in_buffer should be reset";
 		exit(0);
@@ -639,7 +641,8 @@ void worker<update_type>::handle_hash_info_data(ecgraph::byte_t * buf, int len)
 
 	//更新本机的元数据信息
 	m_ring->load_from_json(std::string((char *)buf, len));
-
+	m_size = m_ring->worker_size() + 1;
+	m_ring->get_workers(m_machines);
 }
 
 
@@ -820,6 +823,13 @@ void worker<update_type>::recv()
 					next = false;
 					break;
 				}
+				case END_TAG:
+				{
+					set_current_state(NODE_STATE::FINISH_ALL);
+					LOG_TRIVIAL(info) << "worker(" << m_rank << ") received end";
+					next = false;
+					break;
+				}
 				default:
 					LOG_TRIVIAL(warn) << "[BEFORE_START]not an expected message";
 					break;
@@ -876,6 +886,7 @@ void worker<update_type>::recv()
 					next = false;
 					break;
 				}
+				
 				default:
 					LOG_TRIVIAL(warn) << "worker(" << m_rank 
 						<< ") [DISTRIBUTING_GRAHP]not an expected message";
@@ -1021,7 +1032,9 @@ void worker<update_type>::recv()
 								delete send_thrd;
 								send_thrd = NULL;
 							}
-							
+							if (send_thrd != NULL) {
+								delete send_thrd;
+							}
 							//使得图计算程序能结束
 							m_algorithm->setover_in_buffer();
 
@@ -1029,6 +1042,9 @@ void worker<update_type>::recv()
 								graph_thrd->join();
 								delete graph_thrd;
 								graph_thrd = NULL;
+							}
+							if (graph_thrd != NULL) {
+								delete graph_thrd;
 							}
 							LOG_TRIVIAL(info) << "worker(" 
 								<< m_rank << ") recv change state msg";
@@ -1068,7 +1084,7 @@ void worker<update_type>::recv()
 			#endif
 
 
-			//等待计算节点将自己一轮迭代的一些运行消息发送过来。
+			//将运行信息发给master节点。
 			worker_runtime_info_msg *msg
 				= new worker_runtime_info_msg();
 			msg->set_worker_id(m_rank);
@@ -1140,7 +1156,37 @@ void worker<update_type>::recv()
 			LOG_TRIVIAL(info) << "worker(" << m_rank << ") in FINISH_ITERATION";
 			#endif
 			m_algorithm->output();
-			set_current_state(NODE_STATE::FINISH_ALL);
+			LOG_TRIVIAL(info) << "worker(" << m_rank << ") output ok";
+			bool next = true;
+			while (next) {
+				//接收消息
+				MPI_Recv((void *)recv_buf,
+					sizeof(ecgraph::byte_t)* RECV_BUFFER_SIZE, MPI_BYTE,
+					MPI_ANY_SOURCE, MPI_ANY_TAG,
+					MPI_COMM_WORLD, &status);
+				//处理数据
+				int count;  //接收的数据量
+				MPI_Get_count(&status, MPI_BYTE, &count);
+
+				assert(status.MPI_SOURCE == MASTER_RANK);
+				switch (status.MPI_TAG)
+				{
+
+				case END_TAG:
+				{
+					set_current_state(NODE_STATE::FINISH_ALL);
+					LOG_TRIVIAL(info) << "worker(" << m_rank << ") received end";
+					m_algorithm->clear();
+					next = false;
+					break;
+				}
+				default:
+					LOG_TRIVIAL(warn) << "[BEFORE_START]not an expected message";
+					break;
+				}
+			}
+
+			//set_current_state(NODE_STATE::FINISH_ALL);
 			#ifdef MY_DEBUG
 			LOG_TRIVIAL(info) << "worker(" << m_rank << ") out FINISH_ITERATION";
 			#endif
@@ -1159,6 +1205,7 @@ void worker<update_type>::recv()
 		}
 		}
 	}
+	delete[] recv_buf;
 }
 
 template<typename update_type>

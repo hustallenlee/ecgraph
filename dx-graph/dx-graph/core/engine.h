@@ -505,7 +505,7 @@ public:
 	virtual void scatter() = 0;
 	virtual bool gather() = 0;	
 	virtual void output() = 0;
-
+	virtual void clear() = 0;
 	virtual void scatter_wrapper() {
 		scatter();
 		push_all_buffered_update();

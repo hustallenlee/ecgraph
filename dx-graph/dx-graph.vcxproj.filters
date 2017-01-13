@@ -79,11 +79,11 @@
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="dx-graph\core\main.cpp">
-      <Filter>algorithms</Filter>
-    </ClCompile>
+    <None Include="ClassDiagram.cd" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="ClassDiagram.cd" />
+    <ClCompile Include="dx-graph\algorithms\pagerank.cpp">
+      <Filter>algorithms</Filter>
+    </ClCompile>
   </ItemGroup>
 </Project>

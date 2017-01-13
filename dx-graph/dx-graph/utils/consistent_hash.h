@@ -67,11 +67,13 @@ namespace ecgraph{
 			assert(json_file);
 			load_from_json(json_file);
 		}
-
+		consistent_hash() {
+			m_graph_data = NULL;
+			m_min_vertices_per_node = MIN_VERTIECS_PER_NODE;
+		}
 
 		void init(std::vector<vertex_t> &machine_nodes){
 			if (!machine_nodes.empty()) {
-
 				graph_data::graph_size_t each =
 					m_graph_data->get_vertices_count() / machine_nodes.size();
 
@@ -117,6 +119,10 @@ namespace ecgraph{
 
         vertex_t operator()(vertex_t vertex_id){
         //return node_id
+			if (m_node_to_ring.empty()) {
+				LOG_TRIVIAL(error) << "find worker error, this function should be used after initation";
+				exit(0);
+			}
             auto iter = m_node_to_ring.lower_bound(vertex_to_ring_value(vertex_id));
             if(iter!=m_node_to_ring.end()){
                 return iter->second; //return the nearest worker
@@ -129,7 +135,10 @@ namespace ecgraph{
 
 		//获得一个计算node上的点的范围
 		std::pair<vertex_t, vertex_t> get_vertices_on_node(vertex_t node_id) {
-			if (m_node_to_ring.empty()) { return std::make_pair(VERTEX_MIN, VERTEX_MIN); }
+			if (m_node_to_ring.empty()) { 
+				LOG_TRIVIAL(error) << "error happened, this function should be used after initation";
+				exit(0);
+			}
 
 			vertex_t start = m_node_to_ring.rbegin()->first + 1;
 			if (start >= m_graph_data->get_vertices_count()) {

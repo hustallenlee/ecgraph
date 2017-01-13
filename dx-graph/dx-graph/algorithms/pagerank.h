@@ -50,7 +50,9 @@ public:
 		//show_graph_info();
 	}
 
-	~ pagerank(){
+	void clear(){
+		//std::cout <<"update_bitset"<< std::hex << (long long)update_bitset<<std::endl;
+		//std::cout << "aux_array" << std::hex << (long long)aux_array<<std::endl;
 		delete update_bitset;
 		delete aux_array;
 	}
@@ -151,6 +153,7 @@ public:
 	void output(){
     	std::ofstream out("output_"+std::to_string(get_rank())+".csv", std::ios::out);
     	auto begin = (*aux_array).begin();
+		LOG_TRIVIAL(info) << "worker(" << get_rank() << ") in output";
     	for (auto iter = begin; iter != (*aux_array).end(); iter++){
         	out << get_gobal_graph_vid(iter -begin)<<" "
             	<<std::fixed<<std::setprecision(16)

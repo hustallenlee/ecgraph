@@ -170,10 +170,10 @@
     <ClInclude Include="dx-graph\utils\type_utils.h" />
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="dx-graph\core\main.cpp" />
+    <None Include="ClassDiagram.cd" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="ClassDiagram.cd" />
+    <ClCompile Include="dx-graph\algorithms\pagerank.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

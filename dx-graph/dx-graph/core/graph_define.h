@@ -25,19 +25,21 @@
 
 //结束消息
 #define	END_TAG 1000
-
 #define MASTER_RANK 0 //控制节点
 
 
+
+//============改变一下宏定义调节性能========================================================
 #define RECV_BUFFER_SIZE 20000000   //每个计算节点接收数据的大小 20M 这个必须以字节为单位计数
 #define SEND_BUFFER_SIZE 1000000	//发送缓存的大小 1M   以update大小为单位计数
 #define MAX_NONDATA_SIZE 1000	//非数据消息的最大长度 1k  各种消息的最大长度，字节为单位
-#define GRAPH_DATA_BUFFER_SIZE 500000 //图数据缓冲区大小 5M  edge_t大小为单位计数
-#define READ_GRAPH_DATA_ONCE 100000 //一次读取的图数据量 0.1M  edge_t大小为单位计数
+#define GRAPH_DATA_BUFFER_SIZE 5000000 //图数据缓冲区大小 0.5M  edge_t大小为单位计数
+#define READ_GRAPH_DATA_ONCE 1000000 //一次读取的图数据量 0.1M  edge_t大小为单位计数
 
+//worker节点的接收和发送还粗
 #define IN_BUFFER_SIZE 5000000 //接收缓存大小 5M update大小为单位
 #define OUT_BUFFER_SIZE 5000000 //发送缓冲区大小 5M update大小为单位
-
+//============================================================================================
 enum NODE_STATE {				//本机状态
 	BEFORE_START,				//还未开始
 	DISTRIBUTING_GRAHP,			//分发图数据中
