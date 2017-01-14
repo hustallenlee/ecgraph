@@ -12,6 +12,8 @@
 #include <cstdlib>
 #include <cassert>
 #include <ctime>
+#include <set>
+#include <cstdio>
 
 #include "utils/types.h"
 #include "utils/buffer.h"
@@ -64,7 +66,6 @@ public:
 	//数据类型有：图数据，update，
 	//ring环信息，图数据信息
 	//控制信息
-	void worker_recv();
 	void handle_graph_data(ecgraph::byte_t * buf, int len);
 	void handle_update_data(ecgraph::byte_t * buf, int len);
 	void handle_hash_info_data(ecgraph::byte_t * buf, int len);
@@ -74,6 +75,13 @@ public:
 	void send_message_to_master(base_message * msg, int master_rank);
 	void send_message_to_master(std::string json_msg, int conrroller_rank);
 	
+	//向某一个worker发送消息
+	void send_msg_to_one_worker(base_message *msg, int tag, int worker_rank);
+	void send_msg_to_one_worker(std::string json_msg, int tag, int worker_rank);
+
+	//二分自己
+	void binay_partition_myself();
+	void set_one_worker_state(NODE_STATE state, int worker_rank);
 	//接收数据，可以是各种数据
 	void recv();
 
@@ -85,7 +93,6 @@ public:
 		//auto f_send = std::bind(&worker<update_type>::send, this);
 		//send_thrd = new std::thread(f_send);
 		//std::function<void(this)> f_send = std::bind(&worker<update_type>::send_update, this);
-		//worker_recv();
 		recv();
 	}
 
@@ -187,8 +194,8 @@ private:
 	int m_in_buffer_close_flag;
 	clock_t m_start_time;
 	clock_t m_end_time;
-	std::function<void(void)> f_send;
-	std::function<void(void)> f_algorithm;
+	std::function<void(void)> m_f_send;
+	std::function<void(void)> m_f_algorithm;
 };
 
 template <typename update_type>
@@ -233,8 +240,8 @@ worker<update_type>::worker(int argc,
 
 	m_start_time = -1; //无效值
 	m_end_time = -1;	//无效值
-	f_send = std::bind(&worker<update_type>::send_update, this);
-	f_algorithm = std::bind(&engine<update_type>::iterate_once, m_algorithm);
+	m_f_send = std::bind(&worker<update_type>::send_update, this);
+	m_f_algorithm = std::bind(&engine<update_type>::iterate_once, m_algorithm);
 }
 
 
@@ -399,176 +406,6 @@ inline void worker<update_type>::recv_update()
 }
 
 
-template <typename update_type>
-void worker<update_type>::worker_recv() {
-
-	//断言，需要为计算节点
-	assert(m_node_type == NODE_TYPE::WORKER_NODE);
-
-	//申请接收数据的缓存
-	//update_type *update_buf = new update[IN_BUFFER_SIZE];//update缓存
-	//ecgraph::edge_t *edge_buf = new ecgraph::edge_t[IN_BUFFER_SIZE];//图数据缓存
-	//ecgraph::byte_t *hash_info_buf = new ecgraph::byte_t[MAX_NONDATA_SIZE];//ring环
-	//ecgraph::byte_t *graph_info_buf = new ecgraph::byte_t[MAX_NONDATA_SIZE];//图信息
-	//ecgraph::byte_t *controll_info_buf = new ecgraph::byte_t[MAX_NONDATA_SIZE];//控制信息
-	ecgraph::byte_t *recv_buf = new ecgraph::byte_t[RECV_BUFFER_SIZE];
-	//申请接收数据的缓存end
-
-	//MPI_Request req;
-	MPI_Status status;
-	bool go_on = true;
-	while (go_on) {
-		//接收更新
-		/*MPI_Irecv((void *)update_buf,
-		sizeof(update_type)*IN_BUFFER_SIZE, MPI_BYTE,
-		MPI_ANY_SOURCE, UPDATE_DATA_TAG,
-		MPI_COMM_WORLD, &req[0])*/
-
-		//接收控制节点分发的图数据
-		/*MPT_Irecv((void *)edge_buf,
-		sizeof(ecgraph::edge_t)* IN_BUFFER_SIZE, MPI_BYTE,
-		0, GRAPH_DATA_TAG,
-		MPI_COMM_WORLD, &req[1]);*/
-
-		//同步ring环的信息
-		/*MPI_Irecv((void*)hash_info_buf,
-		sizeof(ecgraph::byte_t)*MAX_NONDATA_SIZE, MPI_BYTE,
-		0, HASH_INFO_TAG,
-		MPI_COMM_WORLD, &req[2]);*/
-
-
-		//在图分发时接收图的元数据信息，如图的大小，结点数等等
-		/*MPI_Irecv((void *)graph_info_buf,
-		sizeof(ecgraph::byte_t)*MAX_NONDATA_SIZE, MPI_BYTE,
-		0, GRAPH_INFO_TAG,
-		MPI_COMM_WORLD, &req[3]);*/
-
-		//接收图的控制信息
-		/*MPI_Irecv((void *)controll_info_buf,
-		sizeof(ecgraph::byte_t)*MAX_NONDATA_SIZE, MPI_BYTE,
-		0, GRAPH_CONTROLL_TAG,
-		MPI_COMM_WORLD, &req[4]);*/
-
-		MPI_Recv((void *)recv_buf,
-			sizeof(ecgraph::byte_t)* RECV_BUFFER_SIZE, MPI_BYTE,
-			MPI_ANY_SOURCE, MPI_ANY_TAG,
-			MPI_COMM_WORLD, &status);
-
-		//处理数据
-		int count;  //接收的数据量
-		MPI_Get_count(&status, MPI_BYTE, &count);
-		#ifdef MY_DEBUG
-		LOG_TRIVIAL(info) << "worker(" << m_rank << ") recv tag "<< status.MPI_TAG;
-		#endif
-
-
-		switch (status.MPI_TAG) {
-
-		case UPDATE_DATA_TAG:   //update数据
-			assert(NODE_STATE::IN_ITERATION == m_node_state);
-			handle_update_data(recv_buf, count);
-			break;
-
-		case GRAPH_DATA_TAG:	//控制节点分发的图数据
-								//断言控制节点发的数据
-
-			if (status.MPI_SOURCE != MASTER_RANK) {
-				LOG_TRIVIAL(info) << "This graph data is not sent by master";
-			}
-			else {
-				assert(NODE_STATE::DISTRIBUTING_GRAHP == m_node_state);
-				handle_graph_data(recv_buf, count);
-
-				//将分区配置信息写入磁盘
-				(*m_partition_config).dump(m_partition_filename + ".json");
-			}
-			break;
-
-		case HASH_INFO_TAG:		//同步ring数据
-			//状态约束
-			assert(m_node_type == NODE_TYPE::WORKER_NODE
-				&& (m_node_state == NODE_STATE::BEFORE_START
-					|| m_node_state == NODE_STATE::BETWEEN_TWO_ITERATION));
-
-				if (status.MPI_SOURCE != MASTER_RANK) {
-					LOG_TRIVIAL(info) << "This ring info is not sent by master";
-				}
-				else {
-					
-					handle_hash_info_data(recv_buf, count);
-					if (m_node_state == NODE_STATE::BEFORE_START)
-					{
-						set_current_state(NODE_STATE::DISTRIBUTING_GRAHP);
-					}
-				}
-				break;
-
-			case GRAPH_INFO_TAG:	//图元数据
-				//状态约束
-				assert(m_node_type == NODE_TYPE::WORKER_NODE
-						&&(m_node_state == NODE_STATE::BEFORE_START
-							|| m_node_state == NODE_STATE::BETWEEN_TWO_ITERATION));
-
-
-				if (status.MPI_SOURCE != MASTER_RANK) {
-					LOG_TRIVIAL(info) << "This graph info is not sent by master";
-				}
-				else {
-					handle_graph_info_data(recv_buf, count);
-
-					//设置当前状态
-					if (m_node_state == NODE_STATE::BEFORE_START) {
-						set_current_state(NODE_STATE::DISTRIBUTING_GRAHP);
-					}
-					else if (m_node_state == NODE_STATE::BETWEEN_TWO_ITERATION) {
-						set_current_state(NODE_STATE::IN_ITERATION);
-					}
-				}
-				break;
-
-			case GRAPH_CONTROLL_TAG:	//控制节点发的控制信息
-
-				assert(m_node_type == NODE_TYPE::WORKER_NODE
-					&& (m_node_state == NODE_STATE::FINISH_ITERATION
-						|| m_node_state == NODE_STATE::BETWEEN_TWO_ITERATION)
-						|| m_node_state == NODE_STATE::FINISH_DISTRIBUTED_GRAPH);
-				if (status.MPI_SOURCE != MASTER_RANK) {
-					LOG_TRIVIAL(info) << "This controll message is not sent by master";
-				}
-				else {
-					//set_current_state(NODE_STATE::FINISH_DISTRIBUTED_GRAPH);
-					handle_graph_controll_data(recv_buf, count);
-
-				}
-				break;
-
-			case END_TAG:
-				//结束接收数据
-				go_on = false;
-				#ifdef MY_DEBUG
-				LOG_TRIVIAL(info) << "worker(" << m_rank << ") end";
-				#endif
-				break;
-
-			default:
-				break;
-
-		}
-
-	}
-	//释放申请的内存
-	//delete [] update_buf;
-	//delete [] edge_buf;
-	//delete [] hash_info_buf;
-	//delete [] graph_info_buf;
-	//delete [] controll_info_buf
-	delete[] recv_buf;
-	//释放申请的内存end
-
-}
-
-
-
 template<typename update_type>
 void worker<update_type>::handle_graph_data(ecgraph::byte_t * buf, int len)
 {
@@ -631,7 +468,7 @@ void worker<update_type>::handle_hash_info_data(ecgraph::byte_t * buf, int len)
 {
 	assert(m_node_type == NODE_TYPE::WORKER_NODE 
 			&& (m_node_state == NODE_STATE::BEFORE_START
-				|| m_node_state == NODE_STATE::IN_ITERATION));
+				|| m_node_state == NODE_STATE::BETWEEN_TWO_ITERATION));
 	//更新本机ring环所有信息
 	//TODO
 	#ifdef MY_DEBUG
@@ -764,6 +601,189 @@ inline void worker<update_type>::send_message_to_master(std::string json_msg, in
 }
 
 template<typename update_type>
+inline void worker<update_type>::send_msg_to_one_worker(base_message * msg, 
+	int tag, int worker_rank)
+{
+	std::string json_msg = msg->serialize();
+	send_msg_to_one_worker(json_msg, tag, worker_rank);
+}
+
+template<typename update_type>
+inline void worker<update_type>::send_msg_to_one_worker(std::string json_msg, 
+	int tag, int worker_rank)
+{
+	MPI_Send((void *)json_msg.c_str(), json_msg.size(),
+		MPI_BYTE, worker_rank, tag, MPI_COMM_WORLD);
+}
+
+template<typename update_type>
+inline void worker<update_type>::binay_partition_myself()
+{
+	//在分裂过程中，要分裂的的worker
+	//将分区数据及分区配置给另外一个新的worker
+	//并将新的ring信息给另一个新的worker,
+	//这个新的worker在FINISH_DISTRIBUTED_GRAPH状态后直接进入
+	//BETWEEN_TWO_ITERATION状态，这样所有worker又处于同一状态了。
+	long long mid = std::stoll((*m_partition_config)["partition_mid_vid"]);
+	long long start = std::stoll((*m_partition_config)["partition_start_vid"]);
+	long long end = std::stoll((*m_partition_config)["partition_end_vid"]);
+	
+	//首先获取一个新的worker
+	vector<ecgraph::vertex_t> machines;
+	m_ring->get_workers(machines);
+	std::set<ecgraph::vertex_t> worker_set(machines.begin(), machines.end());
+	
+	//在资源池找一个空闲的worker, 0默认是master，不可用
+	ecgraph::vertex_t new_worker;
+	for (ecgraph::vertex_t i = 1; i < m_world_size; i++) {
+		if (worker_set.find(i) == worker_set.end()) {//不存在，则找到了
+			new_worker = i;
+			break;
+		}
+	}
+	//更新自身ring环信息
+	m_ring->split(std::make_pair((ecgraph::vertex_t)mid, new_worker));
+
+	//序列化
+	std::string ring_info = m_ring->save();
+
+	//发送给新worker
+	send_msg_to_one_worker(ring_info, HASH_INFO_TAG, new_worker);
+
+	//发送分区配置信息===============================
+	std::fstream my_partition_config(m_partition_filename + ".json", std::ios::in);
+	ptree send_pt;
+	read_json(my_partition_config, send_pt);
+	
+	//填充值
+	send_pt.put("graph_info.partition_id", std::to_string(new_worker));
+	send_pt.put("graph_info.name", pt.get<std::string>("graph_info.name")
+		+ "_" + std::to_string(new_worker));
+	send_pt.put("graph_info.partition_end_vid",	std::to_string(end));
+	send_pt.put("graph_info.partition_start_vid", std::to_string(mid+1));
+	send_pt.put("graph_info.partition_mid_vid",	std::to_string(-1));
+	//发送
+	std::stringstream ss;
+	write_json(ss,send_pt);
+	send_msg_to_one_worker(ss.str(), GRAPH_INFO_TAG, new_worker);
+	ss.clear();
+
+	//发送完毕后，改变其状态为DISTRIBUTING_GRAHP，以接收图数据
+	set_one_worker_state(NODE_STATE::DISTRIBUTING_GRAHP, new_worker);
+	
+	//=====================================================================
+
+
+	//开始发送图分区数据====================================================
+	//
+	ecgraph::buffer<ecgraph::edge_t> graphdata_buffer(GRAPH_DATA_BUFFER_SIZE);
+	ecgraph::edge_t * edge_buffer = new ecgraph::edge_t[READ_GRAPH_DATA_ONCE];
+	//首先为图分区改名
+	std::string new_partition_name = m_partition_filename_ + "_tmp";
+	rename(m_partition_filename, new_partition_name);
+	if (graphdata_buffer.start_write(new_partition_name) == 0) {
+		LOG_TRIVIAL(error) << "worker(" << m_rank << ") rename "
+			<< m_partition_filename << " failed";
+		perror(m_partition_filename);
+		exit(0);
+	}
+	std::ofstream my_partition(m_partition_filename, std::ios::out
+													｜std::ios::app);
+	//分配发送缓冲
+	ecgraph::edge_t* send_buf[2];
+	send_buf[0] = new ecgraph::edge_t[SEND_BUFFER_SIZE];
+	send_buf[1] = new ecgraph::edge_t[SEND_BUFFER_SIZE];
+
+	graphdata_buffer.start_write(new_partition_name);
+	ecgraph::vertex_t dst_rank;
+	int my_edges_num = 0; //再次分完区后本机剩下的边数
+	while (!graphdata_buffer.is_over()) {
+		int length[2] = {0};
+		int readed_num = graphdata_buffer.read(edge_buffer, READ_GRAPH_DATA_ONCE);
+		for (int i = 0; i < readed_num; i++) {
+			dst_rank = (*m_ring)(edge_buffer[i].src);
+			if (dst_rank == new_worker) {
+				//放到send_buf[1]中
+				send_buf[1][length[1]++] = edge_buffer[i];
+			}
+			else if(dst_rank == m_rank){
+				send_buf[0][length[0]++] = edge_buffer[i];
+			}
+			else {
+				LOG_TRIVIAL(error) << "worker(" << m_rank << ") "
+					<< "error happened in sending graph data";
+				exit(0);
+			}
+		}
+		//发送和写入
+		my_partition.write((char *)(send_buf[0]), 
+							sizeof(ecgraph::edge_t)*length[0]);
+		my_edges_num += length[0];
+		MPI_Send((void *)(send_buf[1]),
+							length[1]*sizeof(ecgraph::edge_t),
+							MPI_BYTE,
+							new_worker,
+							GRAPH_DATA_TAG,
+							MPI_COMM_WORLD);
+	}
+	//发送完图数据之后，再设置其状态为FINISH_DISTRIBUTED_GRAPH
+	set_one_worker_state(NODE_STATE::FINISH_DISTRIBUTED_GRAPH, new_worker);
+
+	//再发送一个同步迭代次数的消息，是新的worker的迭代次数和其他worker同步
+	worker_sync_state_msg *msg = new worker_sync_state_msg();
+	msg->set_worker_id(m_rank);
+	msg->set_current_loop(m_algorithm->super_step());
+	send_msg_to_one_worker(msg, GRAPH_CONTROLL_TAG, new_worker);
+
+	//然后再发一个改变状态的消息，使新的worker的状态和其他worker同步
+	set_one_worker_state(NODE_STATE::FINISH_ITERATION, new_worker);
+	//发完以上消息后，所有的所有的worker就处于BETWEEN_TWO_ITERATION
+
+	//更新自己的分区配置信息
+	my_partition_config.close();
+	my_partition_config.open(m_partition_filename + ".json", std::ios::out);
+	send_pt.put("graph_info.partition_id", std::to_string(m_rank));
+	send_pt.put("graph_info.name", pt.get<std::string>("graph_info.name")
+		+ "_" + std::to_string(m_rank));
+	send_pt.put("graph_info.partition_end_vid", std::to_string(mid));
+	send_pt.put("graph_info.partition_start_vid", std::to_string(start));
+
+	//一下等一会再填
+	long long global_graph_vertices_num
+		= std::stoll((*m_partition_config)["vertices"]);
+	long long my_mid = ((global_graph_vertices_num +
+		partition_start_vid +
+		partition_end_vid) / 2) % global_graph_vertices_num;
+
+	send_pt.put("graph_info.partition_mid_vid", std::to_string(my_mid));
+
+	//更新m_partition_config
+	(*m_partition_config)["partition_end_vid"] = mid;	
+	(*m_partition_config)["partition_mid_vid"] = my_mid;
+
+	send_pt.put("graph_info.partition_edges_num", std::to_string(my_edges_num));
+	(*m_partition_config)["partition_edges_num"] = std::to_string(my_edges_num);
+	//保存本worker的图分区配置文件
+	m_partition_config->dump(m_partition_filename+".json");
+
+	delete[] send_buf[0];
+	delete[] send_buf[1];
+	//========================================================================
+}
+
+template<typename update_type>
+inline void worker<update_type>::set_one_worker_state(NODE_STATE state, int worker_rank)
+{
+	//此时worker作为一个伪master改变一个新worker的状态
+	master_change_worker_state_msg *msg
+		= new master_change_worker_state_msg();
+	msg->set_master_id(m_rank);
+	msg->set_state_index((int)state);
+	send_msg_to_one_worker(msg, GRAPH_CONTROLL_TAG, worker_rank);
+	delete msg;
+}
+
+template<typename update_type>
 void worker<update_type>::recv()
 {
 	//断言，需要为计算节点
@@ -794,7 +814,7 @@ void worker<update_type>::recv()
 				int count;  //接收的数据量
 				MPI_Get_count(&status, MPI_BYTE, &count);
 
-				assert(status.MPI_SOURCE == MASTER_RANK);
+				//assert(status.MPI_SOURCE == MASTER_RANK);
 				switch (status.MPI_TAG)
 				{
 				case HASH_INFO_TAG:
@@ -928,18 +948,29 @@ void worker<update_type>::recv()
 				{
 				case GRAPH_CONTROLL_TAG:
 				{	
-					if (get_message_id(recv_buf, count)
-					!= MASTER_CHANGE_WORKER_STATE_MSGID) {
-					LOG_TRIVIAL(warn) << "expect a change state message";
-					continue;
+					int msg_id = get_message_id(recv_buf, count);
+
+					if (msg_id == MASTER_CHANGE_WORKER_STATE_MSGID) {
+						master_change_worker_state_msg msg;
+						//装载消息
+						msg.load(std::string((char *)recv_buf, count));
+						//设置状态
+						set_current_state((NODE_STATE)msg.get_state_index());
+						next = false;//结束
+						
+					}
+					else if (msg_id == WORKER_SYNC_STATE_MSGID) {
+						worker_sync_state_msg msg;
+						msg.load(std::string((char *)recv_buf, count));
+						m_algorithm->set_current_step(msg.get_current_loop());
+					}
+					else{
+						LOG_TRIVIAL(warn) "worker(" << m_rank
+							<< ") expect a change state message";
+						continue;
 					}
 
-					master_change_worker_state_msg msg;
-					//装载消息
-					msg.load(std::string((char *)recv_buf, count));
-					//设置状态
-					set_current_state((NODE_STATE)msg.get_state_index());
-					next = false;//结束
+					
 					break;
 				}
 				default:
@@ -1014,8 +1045,8 @@ void worker<update_type>::recv()
 							//迭代一次
 							
 							//下面两行程序顺序不要换
-							graph_thrd = new std::thread(f_algorithm);
-							send_thrd = new std::thread(f_send);
+							graph_thrd = new std::thread(m_f_algorithm);
+							send_thrd = new std::thread(m_f_send);
 							//LOG_TRIVIAL(info) << "worker(" << m_rank << ") algorithm info";
 							//m_algorithm->show_graph_info();
 							
@@ -1124,8 +1155,18 @@ void worker<update_type>::recv()
 							continue;
 						}
 
-						//可以作为一轮迭代开始标志
-						if (msg_id == MASTER_CHANGE_WORKER_STATE_MSGID) {
+						if (msg_id == MASTER_BINARY_PARTITION_WORKER_MSGID) {
+							//收到master发过来的二分消息
+							binay_partition_myself();
+							std::string ring_info = m_ring->save();
+							worker_send_ring_info_msg *msg
+								= new worker_send_ring_info_msg();
+							msg->set_worker_id(m_rank);
+							msg->set_ring_info(ring_info);
+							send_message_to_master(msg, MASTER_RANK);
+						}
+						else if (msg_id == MASTER_CHANGE_WORKER_STATE_MSGID) {
+							//可以作为一轮迭代开始标志
 							master_change_worker_state_msg msg;
 							msg.load(std::string((char *)recv_buf, count));
 							//设置状态
@@ -1135,7 +1176,10 @@ void worker<update_type>::recv()
 						break;
 					}
 					case HASH_INFO_TAG:
-						//TODO
+						//更新本机信息
+						handle_hash_info_data(recv_buf, count);
+						m_algorithm->load_graph(m_partition_filename);
+						m_algorithm->init();
 						break;
 					default:
 					{

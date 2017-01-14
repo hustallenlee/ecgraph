@@ -324,7 +324,9 @@ public:
 	virtual int super_step(){
 		return m_step_counter ;
 	}	
-	
+	int set_current_step(int step_counter) {
+		m_step_counter = step_counter;
+	}
 	//return whether reach the max super step
 	/*virtual bool reach_max_step (){
 		if (m_step_counter >= m_max_loop){

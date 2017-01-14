@@ -33,8 +33,8 @@
 #define RECV_BUFFER_SIZE 20000000   //每个计算节点接收数据的大小 20M 这个必须以字节为单位计数
 #define SEND_BUFFER_SIZE 1000000	//发送缓存的大小 1M   以update大小为单位计数
 #define MAX_NONDATA_SIZE 1000	//非数据消息的最大长度 1k  各种消息的最大长度，字节为单位
-#define GRAPH_DATA_BUFFER_SIZE 5000000 //图数据缓冲区大小 0.5M  edge_t大小为单位计数
-#define READ_GRAPH_DATA_ONCE 1000000 //一次读取的图数据量 0.1M  edge_t大小为单位计数
+#define GRAPH_DATA_BUFFER_SIZE 500000 //图数据缓冲区大小 0.5M  edge_t大小为单位计数
+#define READ_GRAPH_DATA_ONCE 100000 //一次读取的图数据量 0.1M  edge_t大小为单位计数
 
 //worker节点的接收和发送还粗
 #define IN_BUFFER_SIZE 5000000 //接收缓存大小 5M update大小为单位
@@ -155,6 +155,34 @@ R"({
 	"msg_id" : "1004",
 	"content":{
 		"master_id":"-1"
+	}
+})";
+
+//MASTER_BINARY_PARTITION_WORKER_MSGID msg_id == 1005
+std::string master_binary_partition_worker_str =
+R"({
+	"msg_id" : "1005",
+	"content":{
+		"master_id":"-1"
+	}
+})";
+//WORKER_SEND_RING_INFO_MSGID msg_id == 3
+std::string worker_send_ring_info_str =
+R"({
+	"msg_id" : "3",
+	"content":{
+		"worker_id":"-1",
+		"ring_info":" "
+	}
+})";
+
+//msg_id == 4
+std::string worker_snyc_state_str =
+R"({
+	"msg_id" : "4",
+	"content":{
+		"worker_id":"-1",
+		"current_loop":" "
 	}
 })";
 #endif

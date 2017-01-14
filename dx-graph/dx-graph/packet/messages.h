@@ -16,13 +16,21 @@ using namespace boost::property_tree;
 using namespace boost::gregorian;
 using namespace boost;
 
+
+//消息id定义===============================
+//worker发给master
 #define WORKER_RUNTIME_INFO_MSGID 0
+#define WORKER_STOP_SEND_UPDATE_MSGID 2
+#define WORKER_SEND_RING_INFO_MSGID 3 //worker发送分裂后的新的ring信息给master
+#define WORKER_SYNC_STATE_MSGID 4	//worker发送给另一个worker 同于同步状态消息
+//master发给worker
 #define MASTER_PERMIT_START_MSGID 1000
 #define MASTER_END_ALL_MSGID 1001
-#define WORKER_STOP_SEND_UPDATE_MSGID 2
 #define MASTER_CHANGE_WORKER_STATE_MSGID 1002
 #define MASTER_SEND_MAX_LOOP_MSGID 1003
 #define MASTER_END_ONE_ITERATION_MSGID 1004
+#define MASTER_BINARY_PARTITION_WORKER_MSGID 1005
+//消息id定义===============================end
 
 class base_message {
 protected:
@@ -324,7 +332,7 @@ public:
 
 		}
 		catch (boost::property_tree::ptree_bad_path) {
-			LOG_TRIVIAL(error) << "[master_end_all_msg] illegal message, "
+			LOG_TRIVIAL(error) << "[master_change_worker_state] illegal message, "
 				<< "no field named content.master_id";
 		}
 		try {
@@ -332,7 +340,7 @@ public:
 
 		}
 		catch (boost::property_tree::ptree_bad_path) {
-			LOG_TRIVIAL(error) << "[master_end_all_msg] illegal message, "
+			LOG_TRIVIAL(error) << "[master_change_worker_state] illegal message, "
 				<< "no field named content.state_index";
 		}
 	}
@@ -393,7 +401,7 @@ public:
 
 		}
 		catch (boost::property_tree::ptree_bad_path) {
-			LOG_TRIVIAL(error) << "[master_end_all_msg] illegal message, "
+			LOG_TRIVIAL(error) << "[master_send_max_loop_msg] illegal message, "
 				<< "no field named content.master_id";
 		}
 		try {
@@ -401,7 +409,7 @@ public:
 
 		}
 		catch (boost::property_tree::ptree_bad_path) {
-			LOG_TRIVIAL(error) << "[master_end_all_msg] illegal message, "
+			LOG_TRIVIAL(error) << "[master_send_max_loop_msg] illegal message, "
 				<< "no field named content.max_loop";
 		}
 	}
@@ -461,7 +469,7 @@ public:
 
 		}
 		catch (boost::property_tree::ptree_bad_path) {
-			LOG_TRIVIAL(error) << "[master_end_all_msg] illegal message, "
+			LOG_TRIVIAL(error) << "[master_end_one_iteration_msg] illegal message, "
 				<< "no field named content.master_id";
 		}
 	}
@@ -486,6 +494,192 @@ public:
 		//=======填充
 		pt.put("msg_id", std::to_string(m_msg_id));
 		pt.put("content.master_id", std::to_string(m_master_id));
+		//=======
+
+		std::stringstream ss;
+		write_json(ss, pt);
+		return ss.str();
+	}
+};
+///////////////////////////////////////////////////////////////////////////////
+
+class master_binary_partition_worker_msg : public base_message {
+private:
+	ecgraph::vertex_t m_master_id;
+public:
+	master_binary_partition_worker_msg() {
+		m_msg_id = MASTER_BINARY_PARTITION_WORKER_MSGID;
+	}
+	//从json 字符串中load
+	void load(std::string msg) {
+		base_message::load(msg);
+		assert(MASTER_BINARY_PARTITION_WORKER_MSGID == m_msg_id);
+		try {
+			m_master_id = pt.get<ecgraph::vertex_t>("content.master_id");
+
+		}
+		catch (boost::property_tree::ptree_bad_path) {
+			LOG_TRIVIAL(error) << "[master_binary_partition_worker_msg] illegal message, "
+				<< "no field named content.master_id";
+		}
+	}
+
+	//get 和 set
+	//=============================================================
+	ecgraph::vertex_t get_master_id() {
+		return m_master_id;
+	}
+	void set_master_id(ecgraph::vertex_t master_id) {
+		m_master_id = master_id;
+	}
+
+	ecgraph::vertex_t get_msg_id() {
+		return m_msg_id;
+	}
+	//==============================================================
+
+	//序列化
+	std::string serialize() {
+
+		//=======填充
+		pt.put("msg_id", std::to_string(m_msg_id));
+		pt.put("content.master_id", std::to_string(m_master_id));
+		//=======
+
+		std::stringstream ss;
+		write_json(ss, pt);
+		return ss.str();
+	}
+};
+///////////////////////////////////////////////////////////////////////////////
+class worker_send_ring_info_msg : public base_message {
+private:
+	ecgraph::vertex_t m_worker_id;
+	std::string m_ring_info;
+public:
+	worker_send_ring_info_msg() {
+		m_msg_id = WORKER_SEND_RING_INFO_MSGID;
+	}
+	//从json 字符串中load
+	void load(std::string msg) {
+		base_message::load(msg);
+		assert(WORKER_SEND_RING_INFO_MSGID == m_msg_id);
+		try {
+			m_worker_id = pt.get<ecgraph::vertex_t>("content.worker_id");
+
+		}
+		catch (boost::property_tree::ptree_bad_path) {
+			LOG_TRIVIAL(error) << "[worker_send_ring_info_msg] illegal message, "
+				<< "no field named content.worker_id";
+		}
+		try {
+			m_ring_info = pt.get<std::string>("content.ring_info");
+
+		}
+		catch (boost::property_tree::ptree_bad_path) {
+			LOG_TRIVIAL(error) << "[worker_send_ring_info_msg] illegal message, "
+				<< "no field named content.ring_info";
+		}
+	}
+
+	//get 和 set
+	//=============================================================
+	ecgraph::vertex_t get_worker_id() {
+		return m_worker_id;
+	}
+	void set_worker_id(ecgraph::vertex_t worker_id) {
+		m_worker_id = worker_id;
+	}
+
+	ecgraph::vertex_t get_msg_id() {
+		return m_msg_id;
+	}
+
+	void set_ring_info(std::string ring_info) {
+		m_ring_info = ring_info;
+	}
+
+	std::string get_ring_info(){
+		return m_ring_info;
+	}
+	//==============================================================
+
+	//序列化
+	std::string serialize() {
+
+		//=======填充
+		pt.put("msg_id", std::to_string(m_msg_id));
+		pt.put("content.worker_id", std::to_string(m_worker_id));
+		pt.put("content.worker_id", m_ring_info);
+		//=======
+
+		std::stringstream ss;
+		write_json(ss, pt);
+		return ss.str();
+	}
+};
+///////////////////////////////////////////////////////////////////////////////
+
+class worker_sync_state_msg : public base_message {
+private:
+	ecgraph::vertex_t m_worker_id;
+	int m_current_loop;
+public:
+	worker_sync_state_msg() {
+		m_msg_id = WORKER_SYNC_STATE_MSGID;
+	}
+	//从json 字符串中load
+	void load(std::string msg) {
+		base_message::load(msg);
+		assert(WORKER_SYNC_STATE_MSGID == m_msg_id);
+		try {
+			m_worker_id = pt.get<ecgraph::vertex_t>("content.worker_id");
+
+		}
+		catch (boost::property_tree::ptree_bad_path) {
+			LOG_TRIVIAL(error) << "[worker_sync_state_msg] illegal message, "
+				<< "no field named content.worker_id";
+		}
+		try {
+			m_current_loop = pt.get<ecgraph::vertex_t>("content.current_loop");
+
+		}
+		catch (boost::property_tree::ptree_bad_path) {
+			LOG_TRIVIAL(error) << "[worker_sync_state_msg] illegal message, "
+				<< "no field named content.current_loop";
+		}
+	}
+
+	//get 和 set
+	//=============================================================
+	ecgraph::vertex_t get_worker_id() {
+		return m_worker_id;
+	}
+	void set_worker_id(ecgraph::vertex_t worker_id) {
+		m_worker_id = worker_id;
+	}
+
+	ecgraph::vertex_t get_msg_id() {
+		return m_msg_id;
+	}
+
+	int get_current_loop() {
+		return m_current_loop;
+	}
+
+	void set_current_loop(int current_loop) {
+		m_current_loop = current_loop;
+	}
+
+	//==============================================================
+
+	//序列化
+	std::string serialize() {
+
+		//=======填充
+		pt.put("msg_id", std::to_string(m_msg_id));
+		pt.put("content.worker_id", std::to_string(m_worker_id));
+		pt.put("content.current_loop", std::to_string(m_current_loop));
 		//=======
 
 		std::stringstream ss;

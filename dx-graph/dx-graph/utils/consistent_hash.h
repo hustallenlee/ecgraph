@@ -105,14 +105,13 @@ namespace ecgraph{
         }
 
 
-        //当node_id的计算节点需要分裂时，本函数告知那些涉及到的图结点可能需要重新分配
-        std::pair<vertex_t, vertex_t> split(vertex_t node_id){
+        //插入一个worker到对应的ring环id上去
+        void split(std::pair<vertex_t, vertex_t> vertex_node_pair){
         //the worker node_id is too busy, so it should be splited
             
             //add the worker
             //TODO
-                        
-			return std::make_pair(0,1);
+			m_node_to_ring.insert(vertex_node_pair);
 
         }
 
@@ -261,6 +260,7 @@ namespace ecgraph{
 
 		//获取图信息, 返回字符串形式
 		std::string get_graph_info() {
+			if (m_graph_data == NULL) { return ""; }
 			return m_graph_data->save();
 		}
 

@@ -76,8 +76,12 @@ public:
 	//消息以json的形式发过来
 	void recv_msg_from_worker();
 
+	//向所有的worker广播消息
 	void broadcast_msg_to_all(base_message * msg);
-
+	//向某一个worker发送消息
+	void send_msg_to_one_worker(base_message *msg, int worker_rank);
+	void send_msg_to_one_worker(std::string json_msg, int worker_rank);
+	void update_all_info();
 	void start() {
 		//auto f_send = std::bind(&master::send, this);
 		//auto f_recv = std::bind(&master::send, this);
@@ -89,6 +93,7 @@ public:
 	}
 	void process_worker_info();
 	bool check_worker_run_info();
+	void process_run_info_and_binary_partition();
 
 	//=============消息处理相关=======================================
 	int get_message_id(ecgraph::byte_t *buf, int len);
@@ -638,10 +643,10 @@ void master::go()
 				recv_msg_from_worker();
 				LOG_TRIVIAL(info) << "master(" << m_rank
 					<< ") received all run info msg";
-
-
 				//对m_run_info的信息进行处理
 				//TODO
+
+
 
 				if (check_worker_run_info()) { //check ok
 					//看是否达到最大迭代次数
@@ -652,6 +657,9 @@ void master::go()
 						set_current_state(NODE_STATE::FINISH_ITERATION);
 					}
 					else {
+
+						//处理worker运行信息，并处理。
+						process_run_info_and_binary_partition();
 						//继续迭代
 						set_all_worker_state(NODE_STATE::IN_ITERATION);
 						set_current_state(NODE_STATE::IN_ITERATION);
@@ -791,6 +799,18 @@ void master::broadcast_msg_to_all(base_message * msg)
 	send_to_all_node((void *)json_msg.c_str(), json_msg.size(), GRAPH_CONTROLL_TAG);
 }
 
+inline void master::send_msg_to_one_worker(std::string json_msg, int worker_rank)
+{
+	MPI_Send((void *)json_msg.c_str(), json_msg.size(),
+		MPI_BYTE, worker_rank, GRAPH_CONTROLL_TAG, MPI_COMM_WORLD);
+}
+
+void master::send_msg_to_one_worker(base_message * msg, int worker_rank)
+{
+	std::string json_msg = msg->serialize();
+	send_msg_to_one_worker(json_msg, worker_rank);
+	
+}
 inline void master::process_worker_info()
 {
 	//assert(m_run_info.size() == m_machines.size());
@@ -838,8 +858,73 @@ inline bool master::check_worker_run_info()
 	}
 	return true;
 }
+inline void master::process_run_info_and_binary_partition()
+{
+	//找到最长的两个运行时间
+	ecgraph::vertex_t max1, max2;
+	if (m_run_info.empty()) { 
+		LOG_TRIVIAL(warn) << "master(" << m_rank << ") is empty";
+	}
+	else {
+		auto iter = m_run_info.begin();
+		auto iter_max1 = iter;
+		auto iter_max2 = iter_max1;
 
+		//先找到一个最大的
+		for (; iter != m_run_info.end(); iter++) {
+			if (iter->second.runtime > iter_max1->second.runtime) {
+				iter_max1 = iter;
+			}
+		}
+		//再找到一个第二大的
+		for (iter = m_run_info.begin(); iter != m_run_info.end(); iter++) {
+			if (iter == iter_max1) {
+				continue;
+			}
 
+			if (iter->second.runtime > iter_max2->second.runtime) {
+				iter_max2 = iter;
+			}
+		}
+		max1 = iter_max1->first;
+		max2 = iter_max2->first;
+
+		//比较时间差距，如果相差两倍以上就分裂
+		if (iter_max1->second.runtime > iter_max2->second.runtime) {
+			
+			//开始发送分裂消息
+			master_binary_partition_worker_msg *msg 
+				= new master_binary_partition_worker_msg();
+			msg->set_master_id(m_rank);
+			send_msg_to_one_worker(msg, max1);
+
+			ecgraph::byte_t *recv_msg_buf = new ecgraph::byte_t[MAX_NONDATA_SIZE];
+			//等待分裂的worker发过来的ring环更新信息
+			MPI_Status status;
+			MPI_Recv((void *)recv_msg_buf, MAX_NONDATA_SIZE,
+				MPI_BYTE, max1, HASH_INFO_TAG, MPI_COMM_WORLD, &status);
+			int count;
+			MPI_Get_count(&status, MPI_BYTE, &count);
+
+			std::string json_msg(recv_msg_buf, count);
+			worker_send_ring_info_msg  ring_info_msg_from_worker;
+			ring_info_msg_from_worker.load(json_msg);
+			std::string ring_info = ring_info_msg_from_worker.get_ring_info();
+
+			//同步全局的ring信息
+			m_ring->load_from_json(ring_info); //加载
+			//根据m_ring更新master的所有信息
+			update_all_info();
+			sync_ring_info();	//同步全局ring消息
+		}
+	}
+}
+inline void master::update_all_info()
+{
+	m_size = m_ring->worker_size() + 1;
+	m_ring->get_workers(m_machines);//得到所有的计算节点
+
+}
 inline int master::get_message_id(ecgraph::byte_t * buf, int len)
 {
 	ptree pt;
