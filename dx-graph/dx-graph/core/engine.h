@@ -142,6 +142,12 @@ protected:
 	bool m_no_more_update;
 	//long long m_updated_num;
 
+
+	//下面数组中间结果
+	std::vector<ecgraph::weight_t> result;
+
+	//度
+	std::vector<int> degree;
 public:
 	
 	engine() {
@@ -227,8 +233,9 @@ public:
 		}
 		//=====================================================
 
-
-		
+		//初始化保存中间结果的数组
+		result.resize(m_partition_vertices_num);
+		degree.resize(m_partition_vertices_num);
 	}
 
 	virtual ~ engine(){
