@@ -610,7 +610,7 @@ public:
 		//=======填充
 		pt.put("msg_id", std::to_string(m_msg_id));
 		pt.put("content.worker_id", std::to_string(m_worker_id));
-		pt.put("content.worker_id", m_ring_info);
+		pt.put("content.ring_info", m_ring_info);
 		//=======
 
 		std::stringstream ss;

@@ -72,8 +72,8 @@ public:
 	void handle_graph_info_data(ecgraph::byte_t * buf, int len);
 	void handle_graph_controll_data(ecgraph::byte_t * buf, int len);
 
-	void send_message_to_master(base_message * msg, int master_rank);
-	void send_message_to_master(std::string json_msg, int conrroller_rank);
+	void send_message_to_master(base_message * msg,int tag, int master_rank);
+	void send_message_to_master(std::string json_msg, int tag, int master_rank);
 	
 	//向某一个worker发送消息
 	void send_msg_to_one_worker(base_message *msg, int tag, int worker_rank);
@@ -81,7 +81,9 @@ public:
 
 	//二分自己
 	void binay_partition_myself();
+	void sync_data_to_worker(int worker_rank, int start);
 	void set_one_worker_state(NODE_STATE state, int worker_rank);
+	void handle_data_sync(ecgraph::byte_t * buf, int len);
 	//接收数据，可以是各种数据
 	void recv();
 
@@ -348,6 +350,13 @@ void worker<update_type>::send_update() {
 			}
 			//等待所有发送都完成
 			MPI_Waitall(WORKER_SIZE - my_flag, reqs, status);
+			for (int i = 0; i < (WORKER_SIZE - my_flag); i++) {
+				if (status[i].MPI_ERROR != MPI_SUCCESS) {
+					LOG_TRIVIAL(error) << "send update error, rank:"
+						<< index_to_machine[i] << ", error code "
+						<< status[i].MPI_ERROR;
+				}
+			}
 			//发送所有缓冲区中的数据end
 
 
@@ -370,7 +379,7 @@ void worker<update_type>::send_update() {
 	worker_stop_send_update_msg *msg
 		= new worker_stop_send_update_msg();
 	msg->set_worker_id(m_rank);
-	send_message_to_master(msg, MASTER_RANK);
+	send_message_to_master(msg, GRAPH_CONTROLL_TAG ,MASTER_RANK);
 	delete msg;
 	LOG_TRIVIAL(info) << "worker(" << m_rank << ") send stop send update msg ok";
 
@@ -455,7 +464,7 @@ void worker<update_type>::handle_update_data(ecgraph::byte_t * buf, int len)
 	
 	update_type *update_buf = (update_type *)(buf);
 	int update_len = len / sizeof(update_type);
-	//LOG_TRIVIAL(info) << "worker(" << m_rank << ") received updates " << update_len;
+	LOG_TRIVIAL(info) << "worker(" << m_rank << ") received updates " << update_len;
 	if (!m_in_buffer->push(update_buf, update_len)) {
 		LOG_TRIVIAL(error) << "worker(" << m_rank << ") m_in_buffer should be reset";
 		exit(0);
@@ -579,14 +588,16 @@ void worker<update_type>::handle_graph_controll_data(ecgraph::byte_t * buf, int 
 }
 
 template<typename update_type>
-inline void worker<update_type>::send_message_to_master(base_message * msg, int master_rank)
+inline void 
+worker<update_type>::send_message_to_master(base_message * msg, int tag, int master_rank)
 {
 	std::string json_msg = msg->serialize();
-	send_message_to_master(json_msg, master_rank);
+	send_message_to_master(json_msg, tag, master_rank);
 }
 
 template<typename update_type>
-inline void worker<update_type>::send_message_to_master(std::string json_msg, int master_rank)
+inline void 
+worker<update_type>::send_message_to_master(std::string json_msg, int tag, int master_rank)
 {
 	//判断rank的合法性
 	//存计算节点的rank值
@@ -597,7 +608,7 @@ inline void worker<update_type>::send_message_to_master(std::string json_msg, in
 	//}
 	MPI_Send((void *)json_msg.c_str(), json_msg.size(),
 		MPI_BYTE, master_rank,
-		GRAPH_CONTROLL_TAG, MPI_COMM_WORLD);
+		tag, MPI_COMM_WORLD);
 }
 
 template<typename update_type>
@@ -629,18 +640,19 @@ inline void worker<update_type>::binay_partition_myself()
 	long long end = std::stoll((*m_partition_config)["partition_end_vid"]);
 	
 	//首先获取一个新的worker
-	vector<ecgraph::vertex_t> machines;
+	std::vector<ecgraph::vertex_t> machines;
 	m_ring->get_workers(machines);
 	std::set<ecgraph::vertex_t> worker_set(machines.begin(), machines.end());
 	
 	//在资源池找一个空闲的worker, 0默认是master，不可用
-	ecgraph::vertex_t new_worker;
+	ecgraph::vertex_t new_worker = MASTER_RANK; //无效值
 	for (ecgraph::vertex_t i = 1; i < m_world_size; i++) {
 		if (worker_set.find(i) == worker_set.end()) {//不存在，则找到了
 			new_worker = i;
 			break;
 		}
 	}
+	if (new_worker == MASTER_RANK) { return; }
 	//更新自身ring环信息
 	m_ring->split(std::make_pair((ecgraph::vertex_t)mid, new_worker));
 
@@ -652,15 +664,18 @@ inline void worker<update_type>::binay_partition_myself()
 
 	//发送分区配置信息===============================
 	std::fstream my_partition_config(m_partition_filename + ".json", std::ios::in);
-	ptree send_pt;
-	read_json(my_partition_config, send_pt);
-	
+	ptree send_pt, pt;
+	read_json(my_partition_config, pt);
+	send_pt = pt;
 	//填充值
 	send_pt.put("graph_info.partition_id", std::to_string(new_worker));
-	send_pt.put("graph_info.name", pt.get<std::string>("graph_info.name")
+	std::string new_worker_partition_name = pt.get<std::string>("graph_info.name");
+	int pos = new_worker_partition_name.find_last_of('_');
+	new_worker_partition_name.erase(pos);
+	send_pt.put("graph_info.name", new_worker_partition_name
 		+ "_" + std::to_string(new_worker));
-	send_pt.put("graph_info.partition_end_vid",	std::to_string(end));
-	send_pt.put("graph_info.partition_start_vid", std::to_string(mid+1));
+	send_pt.put("graph_info.partition_end_vid",	std::to_string(mid));
+	send_pt.put("graph_info.partition_start_vid", std::to_string(start));
 	send_pt.put("graph_info.partition_mid_vid",	std::to_string(-1));
 	//发送
 	std::stringstream ss;
@@ -679,17 +694,24 @@ inline void worker<update_type>::binay_partition_myself()
 	ecgraph::buffer<ecgraph::edge_t> graphdata_buffer(GRAPH_DATA_BUFFER_SIZE);
 	ecgraph::edge_t * edge_buffer = new ecgraph::edge_t[READ_GRAPH_DATA_ONCE];
 	//首先为图分区改名
-	std::string new_partition_name = m_partition_filename_ + "_tmp";
-	rename(m_partition_filename, new_partition_name);
-	if (graphdata_buffer.start_write(new_partition_name) == 0) {
+	std::string new_partition_name = m_partition_filename + "_tmp";
+	if (rename(m_partition_filename.c_str(), 
+			new_partition_name.c_str()) != 0) {
 		LOG_TRIVIAL(error) << "worker(" << m_rank << ") rename "
 			<< m_partition_filename << " failed";
-		perror(m_partition_filename);
+		perror(m_partition_filename.c_str());
+		exit(0);
+	}
+	if (rename((m_partition_filename+".json").c_str(),
+		(m_partition_filename + ".json_tmp").c_str()) != 0) {
+		LOG_TRIVIAL(error) << "worker(" << m_rank << ") rename "
+			<< (m_partition_filename + ".json_tmp") << " failed";
+		perror((m_partition_filename + ".json_tmp").c_str());
 		exit(0);
 	}
 	std::ofstream my_partition(m_partition_filename, std::ios::out
-													｜std::ios::app);
-	//分配发送缓冲
+													| std::ios::app);
+	//分配发送缓冲 0 为新worker 1为本机
 	ecgraph::edge_t* send_buf[2];
 	send_buf[0] = new ecgraph::edge_t[SEND_BUFFER_SIZE];
 	send_buf[1] = new ecgraph::edge_t[SEND_BUFFER_SIZE];
@@ -704,10 +726,10 @@ inline void worker<update_type>::binay_partition_myself()
 			dst_rank = (*m_ring)(edge_buffer[i].src);
 			if (dst_rank == new_worker) {
 				//放到send_buf[1]中
-				send_buf[1][length[1]++] = edge_buffer[i];
+				send_buf[0][length[0]++] = edge_buffer[i];
 			}
 			else if(dst_rank == m_rank){
-				send_buf[0][length[0]++] = edge_buffer[i];
+				send_buf[1][length[1]++] = edge_buffer[i];
 			}
 			else {
 				LOG_TRIVIAL(error) << "worker(" << m_rank << ") "
@@ -716,11 +738,11 @@ inline void worker<update_type>::binay_partition_myself()
 			}
 		}
 		//发送和写入
-		my_partition.write((char *)(send_buf[0]), 
-							sizeof(ecgraph::edge_t)*length[0]);
-		my_edges_num += length[0];
-		MPI_Send((void *)(send_buf[1]),
-							length[1]*sizeof(ecgraph::edge_t),
+		my_partition.write((char *)(send_buf[1]), 
+							sizeof(ecgraph::edge_t)*length[1]);
+		my_edges_num += length[1];
+		MPI_Send((void *)(send_buf[0]),
+							length[0]*sizeof(ecgraph::edge_t),
 							MPI_BYTE,
 							new_worker,
 							GRAPH_DATA_TAG,
@@ -734,42 +756,94 @@ inline void worker<update_type>::binay_partition_myself()
 	msg->set_worker_id(m_rank);
 	msg->set_current_loop(m_algorithm->super_step());
 	send_msg_to_one_worker(msg, GRAPH_CONTROLL_TAG, new_worker);
+	LOG_TRIVIAL(info) << "worker(" << m_rank << ") sync step ok";
+
+	sync_data_to_worker(new_worker, 
+		m_algorithm->get_local_graph_vertices_offset(mid));
+	
+
 
 	//然后再发一个改变状态的消息，使新的worker的状态和其他worker同步
-	set_one_worker_state(NODE_STATE::FINISH_ITERATION, new_worker);
+	set_one_worker_state(NODE_STATE::BETWEEN_TWO_ITERATION, new_worker);
 	//发完以上消息后，所有的所有的worker就处于BETWEEN_TWO_ITERATION
+	LOG_TRIVIAL(info) << "worker(" << m_rank << ") set new worker BETWEEN_TWO_ITERATION";
 
 	//更新自己的分区配置信息
 	my_partition_config.close();
 	my_partition_config.open(m_partition_filename + ".json", std::ios::out);
-	send_pt.put("graph_info.partition_id", std::to_string(m_rank));
-	send_pt.put("graph_info.name", pt.get<std::string>("graph_info.name")
-		+ "_" + std::to_string(m_rank));
-	send_pt.put("graph_info.partition_end_vid", std::to_string(mid));
-	send_pt.put("graph_info.partition_start_vid", std::to_string(start));
 
-	//一下等一会再填
+
+	//以下等一会再填
 	long long global_graph_vertices_num
 		= std::stoll((*m_partition_config)["vertices"]);
-	long long my_mid = ((global_graph_vertices_num +
-		partition_start_vid +
-		partition_end_vid) / 2) % global_graph_vertices_num;
 
-	send_pt.put("graph_info.partition_mid_vid", std::to_string(my_mid));
+	long long my_mid;
+	if (end >= (mid + 1)) {
+		my_mid = ((end + mid + 1) / 2) % global_graph_vertices_num;
+	}
+	else {
+		my_mid = ((global_graph_vertices_num + end + mid + 1) / 2)
+			% global_graph_vertices_num;
+	}
+	LOG_TRIVIAL(info) << "worker(" << m_rank << ") my_mid "<<my_mid
+								<<" end "<<end<<" start "<<mid+1;
 
 	//更新m_partition_config
-	(*m_partition_config)["partition_end_vid"] = mid;	
-	(*m_partition_config)["partition_mid_vid"] = my_mid;
-
-	send_pt.put("graph_info.partition_edges_num", std::to_string(my_edges_num));
+	(*m_partition_config)["partition_start_vid"] = std::to_string(mid+1);	
+	(*m_partition_config)["partition_mid_vid"] = std::to_string(my_mid);
+	(*m_partition_config)["partition_end_vid"] = std::to_string(end);
 	(*m_partition_config)["partition_edges_num"] = std::to_string(my_edges_num);
 	//保存本worker的图分区配置文件
 	m_partition_config->dump(m_partition_filename+".json");
 
+	//处理本机的degree和result
+	int *degree = m_algorithm->get_degree().data();
+	ecgraph::weight_t *result = m_algorithm->get_result().data();
+
+	
+	//本地数组的开始和结束
+	int local_start = m_algorithm->get_local_graph_vertices_offset(mid + 1);
+	int local_end = m_algorithm->get_local_graph_vertices_offset(end);
+
+	for (int i = local_start; i <= local_end; i++) {
+		degree[i - local_start] = degree[i];
+		result[i - local_start] = result[i];
+	}
+	m_algorithm->get_degree().resize(local_end - local_start +1);
+	m_algorithm->get_result().resize(local_end - local_start + 1);
+	LOG_TRIVIAL(info) << "degree[0] " << degree[0] << " result[0] " << result[0]
+		<<"size "<< m_algorithm->get_degree().size();
 	delete[] send_buf[0];
 	delete[] send_buf[1];
 	//========================================================================
 }
+
+
+//start表示从数组的什么位置开始同步
+template<typename update_type>
+inline void worker<update_type>::sync_data_to_worker(int worker_rank, int end)
+{
+	//开始同步degree和result
+	ecgraph::weight_t *result = m_algorithm->get_result().data();
+	int *degree = m_algorithm->get_degree().data();
+	worker_sync_data_t *datas = new worker_sync_data_t[SEND_BUFFER_SIZE];
+	int length = 0;
+	
+	for (int i = 0; i <= end; i++) {
+		datas[length].index = i;
+		datas[length].degree = degree[i];
+		datas[length].result = result[i];
+		++length;
+		if (length == SEND_BUFFER_SIZE || i == end) {
+			MPI_Send((void*)datas, length*sizeof(worker_sync_data_t),
+				MPI_BYTE, worker_rank, DATA_SYNC_TAG, MPI_COMM_WORLD);
+			length = 0;
+			LOG_TRIVIAL(info) << "worker(" << m_rank << ") sync_data_to_worker";
+		}
+	}
+
+}
+
 
 template<typename update_type>
 inline void worker<update_type>::set_one_worker_state(NODE_STATE state, int worker_rank)
@@ -784,6 +858,23 @@ inline void worker<update_type>::set_one_worker_state(NODE_STATE state, int work
 }
 
 template<typename update_type>
+inline void worker<update_type>::handle_data_sync(ecgraph::byte_t * buf, int len)
+{
+	assert(len % (sizeof(worker_sync_data_t)) == 0);
+	worker_sync_data_t *sync_data = (worker_sync_data_t *)buf;
+	int sync_data_len = len / sizeof(worker_sync_data_t);
+	int index = 0;
+	int *degree = m_algorithm->get_degree().data();
+	ecgraph::weight_t *result = m_algorithm->get_result().data();
+	LOG_TRIVIAL(info) << "worker(" << m_rank << ") handle_data_sync";
+	for (int i = 0; i < sync_data_len; i++) {
+		index = sync_data[i].index;
+		degree[index] = sync_data[i].degree;
+		result[index] = sync_data[i].result;
+	}
+}
+
+template<typename update_type>
 void worker<update_type>::recv()
 {
 	//断言，需要为计算节点
@@ -792,6 +883,7 @@ void worker<update_type>::recv()
 	bool go_on = true;
 	ecgraph::byte_t *recv_buf = new ecgraph::byte_t[RECV_BUFFER_SIZE];
 	MPI_Status status;
+	bool skip_interation = true;
 	while (go_on) { //状态不为未完成，则继续
 		
 		switch (get_current_state()) {
@@ -837,6 +929,8 @@ void worker<update_type>::recv()
 						LOG_TRIVIAL(warn) << "expect a change state message";
 						continue;
 					}
+					LOG_TRIVIAL(info) << "worker(" << m_rank
+						<< ") recv change state msg source " << status.MPI_SOURCE;
 					master_change_worker_state_msg msg;
 					msg.load(std::string((char *)recv_buf, count));
 					set_current_state((NODE_STATE)msg.get_state_index());
@@ -880,7 +974,7 @@ void worker<update_type>::recv()
 				//处理数据
 				int count;  //接收的数据量
 				MPI_Get_count(&status, MPI_BYTE, &count);
-				assert(status.MPI_SOURCE == MASTER_RANK);//控制节点
+				//assert(status.MPI_SOURCE == MASTER_RANK);//控制节点
 				switch (status.MPI_TAG)
 				{
 				case GRAPH_DATA_TAG:
@@ -897,6 +991,8 @@ void worker<update_type>::recv()
 						continue;
 					}
 					//LOG_TRIVAIL
+					LOG_TRIVIAL(info) << "worker(" << m_rank
+						<< ") recv change state msg source " << status.MPI_SOURCE;
 					master_change_worker_state_msg msg;
 					msg.load(std::string((char *)recv_buf, count));
 					set_current_state((NODE_STATE)msg.get_state_index());
@@ -909,7 +1005,9 @@ void worker<update_type>::recv()
 				
 				default:
 					LOG_TRIVIAL(warn) << "worker(" << m_rank 
-						<< ") [DISTRIBUTING_GRAHP]not an expected message";
+						<< ") [DISTRIBUTING_GRAHP]not an expected message"
+						<<" message TAG "<< status.MPI_TAG
+						<< " source " << status.MPI_SOURCE;
 					break;
 				}
 			}
@@ -943,7 +1041,7 @@ void worker<update_type>::recv()
 				//处理数据
 				int count;  //接收的数据量
 				MPI_Get_count(&status, MPI_BYTE, &count);
-				assert(status.MPI_SOURCE == MASTER_RANK);//控制节点
+				//assert(status.MPI_SOURCE == MASTER_RANK);//控制节点
 				switch (status.MPI_TAG)
 				{
 				case GRAPH_CONTROLL_TAG:
@@ -953,6 +1051,9 @@ void worker<update_type>::recv()
 					if (msg_id == MASTER_CHANGE_WORKER_STATE_MSGID) {
 						master_change_worker_state_msg msg;
 						//装载消息
+						LOG_TRIVIAL(info) << "worker(" << m_rank
+							<< ") recv change state msg source " << status.MPI_SOURCE;
+
 						msg.load(std::string((char *)recv_buf, count));
 						//设置状态
 						set_current_state((NODE_STATE)msg.get_state_index());
@@ -965,16 +1066,23 @@ void worker<update_type>::recv()
 						m_algorithm->set_current_step(msg.get_current_loop());
 					}
 					else{
-						LOG_TRIVIAL(warn) "worker(" << m_rank
+						LOG_TRIVIAL(warn)<< "worker(" << m_rank
 							<< ") expect a change state message";
 						continue;
 					}
-
-					
+					break;
+				}
+				case DATA_SYNC_TAG:
+				{
+					handle_data_sync(recv_buf, count);
 					break;
 				}
 				default:
-					LOG_TRIVIAL(warn) << "[FINISH_DISTRIBUTED_GRAPH]not an expected message";
+					LOG_TRIVIAL(warn) <<"worker("<<m_rank
+						<< ") [FINISH_DISTRIBUTED_GRAPH]not an expected message"
+						<< " message TAG " << status.MPI_TAG
+						<< " source "<<status.MPI_SOURCE
+						<<std::string((char *)recv_buf, count);
 					break;
 				}
 			}
@@ -991,6 +1099,7 @@ void worker<update_type>::recv()
 			#ifdef MY_DEBUG
 			LOG_TRIVIAL(info) << "worker(" << m_rank << ") in IN_ITERATION";
 			#endif
+			skip_interation = false;
 			bool next = true;
 			while (next) {
 				//接收消息
@@ -1114,21 +1223,21 @@ void worker<update_type>::recv()
 			LOG_TRIVIAL(info) << "worker(" << m_rank << ") in BETWEEN_TWO_ITERATION";
 			#endif
 
+			if (skip_interation == false) {
+				//将运行信息发给master节点。
+				worker_runtime_info_msg *msg
+					= new worker_runtime_info_msg();
+				msg->set_worker_id(m_rank);
+				msg->set_current_loop(m_algorithm->get_current_step());
+				//msg->set_current_loop(5);
+				//msg->set_max_loop(10);
 
-			//将运行信息发给master节点。
-			worker_runtime_info_msg *msg
-				= new worker_runtime_info_msg();
-			msg->set_worker_id(m_rank);
-			msg->set_current_loop(m_algorithm->get_current_step());
-			//msg->set_current_loop(5);
-			//msg->set_max_loop(10);
+				msg->set_run_time(((double)(m_end_time - m_start_time)) / CLOCKS_PER_SEC);
 
-			msg->set_run_time(((double)(m_end_time - m_start_time))/ CLOCKS_PER_SEC);
-
-			send_message_to_master(msg, MASTER_RANK);
-			m_start_time = -1;
-			m_end_time = -1;
-			
+				send_message_to_master(msg, GRAPH_CONTROLL_TAG, MASTER_RANK);
+				m_start_time = -1;
+				m_end_time = -1;
+			}
 			bool next = true;
 			while (next) {
 				//接收消息
@@ -1158,12 +1267,16 @@ void worker<update_type>::recv()
 						if (msg_id == MASTER_BINARY_PARTITION_WORKER_MSGID) {
 							//收到master发过来的二分消息
 							binay_partition_myself();
+							//LOG_TRIVIAL(info) << "worker("
+							//	<< m_rank << ") binay_partition_myself ok";
 							std::string ring_info = m_ring->save();
 							worker_send_ring_info_msg *msg
 								= new worker_send_ring_info_msg();
 							msg->set_worker_id(m_rank);
 							msg->set_ring_info(ring_info);
-							send_message_to_master(msg, MASTER_RANK);
+							send_message_to_master(msg, HASH_INFO_TAG, MASTER_RANK);
+							//LOG_TRIVIAL(info) << "worker(" 
+							//	<< m_rank << ") sent ring info to master";
 						}
 						else if (msg_id == MASTER_CHANGE_WORKER_STATE_MSGID) {
 							//可以作为一轮迭代开始标志
@@ -1177,9 +1290,38 @@ void worker<update_type>::recv()
 					}
 					case HASH_INFO_TAG:
 						//更新本机信息
+						if(m_rank == 2){
+							LOG_TRIVIAL(info) << "result[0]:"
+								<< m_algorithm->get_result()[0]
+								<< " result[1]:"
+								<< m_algorithm->get_result()[1]
+								<<  "result[2]:"
+								<< m_algorithm->get_result()[2]
+								<< " degree[0]:"
+								<< m_algorithm->get_degree()[0]
+								<< " degree[1]:"
+								<< m_algorithm->get_degree()[1]
+								<< " degree[2]:"
+								<< m_algorithm->get_degree()[2];
+						}
 						handle_hash_info_data(recv_buf, count);
 						m_algorithm->load_graph(m_partition_filename);
-						m_algorithm->init();
+						if (m_rank == 2) {
+							LOG_TRIVIAL(info) << "result[0]:"
+								<< m_algorithm->get_result()[0]
+								<< " result[1]:"
+								<< m_algorithm->get_result()[1]
+								<< "result[2]:"
+								<< m_algorithm->get_result()[2]
+								<< " degree[0]:"
+								<< m_algorithm->get_degree()[0]
+								<< " degree[1]:"
+								<< m_algorithm->get_degree()[1]
+								<< " degree[2]:"
+								<< m_algorithm->get_degree()[2];
+						}
+						//m_algorithm->init();
+						//m_algorithm->show_graph_info();
 						break;
 					default:
 					{

@@ -142,6 +142,12 @@ protected:
 	bool m_no_more_update;
 	//long long m_updated_num;
 
+
+	//下面数组中间结果
+	std::vector<ecgraph::weight_t> result;
+
+	//度
+	std::vector<int> degree;
 public:
 	
 	engine() {
@@ -227,10 +233,16 @@ public:
 		}
 		//=====================================================
 
-
-		
+		//初始化保存中间结果的数组
+		result.resize(m_partition_vertices_num);
+		degree.resize(m_partition_vertices_num);
 	}
-
+	std::vector<ecgraph::weight_t> &get_result() {
+		return result;
+	}
+	std::vector<int> &get_degree() {
+		return degree;
+	}
 	virtual ~ engine(){
 		if (m_disk_io != NULL) {
 			delete m_disk_io;
@@ -324,7 +336,7 @@ public:
 	virtual int super_step(){
 		return m_step_counter ;
 	}	
-	int set_current_step(int step_counter) {
+	void set_current_step(int step_counter) {
 		m_step_counter = step_counter;
 	}
 	//return whether reach the max super step

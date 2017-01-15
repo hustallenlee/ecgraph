@@ -17,8 +17,6 @@
 #include <iomanip>
 
 typedef struct{
-    int degree;
-    ecgraph::weight_t res;
 	ecgraph::weight_t temp;
 }array_t;
 
@@ -40,12 +38,23 @@ private:
 public:
 	void init(){
 		init_weight = 0.15 / get_gobal_graph_vertices_num();
-		init_array.degree = 0;
-    	init_array.res = init_weight;
+		//init_array.degree = 0;
+    	//init_array.res = init_weight;
     	init_array.temp = 0;
 
 		update_bitset = new std::vector<bool>(get_graph_vertices_num(), false);
+
     	aux_array = new std::vector<array_t>(get_graph_vertices_num(), init_array); //auxiliary array
+
+		//初始化result数组
+		for (auto &item : result) {
+			item = init_weight;
+		}
+		//初始化degree数组
+		for (auto& item : degree) {
+			item = 0;
+		}
+
 		m_updated_num = 0;
 		//show_graph_info();
 	}
@@ -73,7 +82,7 @@ public:
 			while( get_next_edge(edge) ){
 				count++;
 				
-				(*aux_array)[get_local_graph_vertices_offset(edge.src)].degree += 1;			
+				degree[get_local_graph_vertices_offset(edge.src)] += 1;			
 				/*if (count >= 5500000 && rank != 1 &&rank != 2 ) {
 					LOG_TRIVIAL(info) << "compute(" 
 						<< get_rank() << ") count "<<count;
@@ -96,8 +105,12 @@ public:
 				}*/
 					local_address = get_local_graph_vertices_offset(edge.src);
 					update.id = edge.dst;
-					update.update_value =
-                    	((*aux_array)[local_address].res/ (*aux_array)[local_address].degree);
+					if (degree[local_address] == 0) {
+						LOG_TRIVIAL(warn) << "worker("<<get_rank()<<") index "
+										<<local_address <<" degree 0";
+						exit(0);
+					}
+					update.update_value =result[local_address]/ degree[local_address];
 					add_update(update, false);
 				//}
 			}
@@ -130,12 +143,12 @@ public:
 				}
 
 				temp = init_weight + 0.85 * iter->temp;
-				if (fabs((*aux_array)[local_address].res - temp ) < 0.00000000001){
+				if (fabs(result[local_address] - temp ) < 0.00000000001){
 					(*update_bitset)[local_address] = true;
 					m_updated_num ++ ;	
 				}	
 				else{
-					(*aux_array)[iter - aux_array->begin()].res = temp;
+					result[iter - aux_array->begin()] = temp;
 				}
 				iter -> temp =0.0;
 			}
@@ -152,12 +165,12 @@ public:
 	}
 	void output(){
     	std::ofstream out("output_"+std::to_string(get_rank())+".csv", std::ios::out);
-    	auto begin = (*aux_array).begin();
+    	auto begin = result.begin();
 		LOG_TRIVIAL(info) << "worker(" << get_rank() << ") in output";
-    	for (auto iter = begin; iter != (*aux_array).end(); iter++){
+    	for (auto iter = begin; iter != result.end(); iter++){
         	out << get_gobal_graph_vid(iter -begin)<<" "
             	<<std::fixed<<std::setprecision(16)
-            	<<iter -> res<<std::endl;
+            	<<*iter<<std::endl;
     	}
 		
 	}       

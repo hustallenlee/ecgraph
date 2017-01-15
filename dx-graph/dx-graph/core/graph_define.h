@@ -22,6 +22,8 @@
 #define GRAPH_INFO_TAG 3
 //图计算过程中的控制信息
 #define GRAPH_CONTROLL_TAG 100
+//worker同步degree result消息
+#define DATA_SYNC_TAG 4
 
 //结束消息
 #define	END_TAG 1000
@@ -70,7 +72,14 @@ typedef struct {
 	int current_loop;
 } worker_run_info_t;
 
-
+//定义数据同步结构体
+#pragma pack(1)
+typedef struct{
+	ecgraph::vertex_t index;
+	int degree;
+	ecgraph::weight_t result;
+} worker_sync_data_t;
+#pragma pack()
 
 //控制节点收到消息的定义 json格式
 /*

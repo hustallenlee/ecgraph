@@ -245,7 +245,7 @@ void master::send_to_all_node(void * buf, int count, int tag) {
 
 	//发送所有缓冲区中的数据
 	MPI_Request *reqs = new MPI_Request[COMPUTE_SIZE];
-	//MPI_Status status[COMPUTE_SIZE];
+	MPI_Status *status = new MPI_Status[COMPUTE_SIZE];
 
 	//发送数据
 	for (int i = 0; i < COMPUTE_SIZE; i++) {
@@ -258,8 +258,16 @@ void master::send_to_all_node(void * buf, int count, int tag) {
 			&reqs[i]);
 	}
 	//等待所有发送都完成
-	MPI_Waitall(COMPUTE_SIZE, reqs, MPI_STATUS_IGNORE);
+	MPI_Waitall(COMPUTE_SIZE, reqs, status);
+	for (int i = 0; i < COMPUTE_SIZE; i++) {
+		if (status[i].MPI_ERROR != MPI_SUCCESS) {
+			LOG_TRIVIAL(error) << "send to all node msg error, rank:"
+				<< index_to_machine[i] << ", error code "
+				<< status[i].MPI_ERROR;
+		}
+	}
 	delete [] reqs;
+	delete[] status;
 
 }
 void master::end_all()
@@ -272,7 +280,7 @@ void master::end_all()
 	char buf[] = "end";
 	//send_to_all_node((void *)buf, sizeof(buf), END_TAG);
 	MPI_Request *reqs = new MPI_Request[m_world_size-1];
-
+	MPI_Status *status = new MPI_Status[m_world_size - 1];
 	//发送数据
 	for (int i = 1; i < m_world_size; i++) {
 		MPI_Isend((void *)(buf),
@@ -284,8 +292,16 @@ void master::end_all()
 			&reqs[i-1]);
 	}
 	//等待所有发送都完成
-	MPI_Waitall(m_world_size - 1, reqs, MPI_STATUS_IGNORE);
+	MPI_Waitall(m_world_size - 1, reqs, status);
+	for (int i = 0; i < m_world_size - 1; i++) {
+		if (status[i].MPI_ERROR != MPI_SUCCESS) {
+			LOG_TRIVIAL(error) << "send all error, index:"
+				<< i << ", error code "
+				<< status[i].MPI_ERROR;
+		}
+	}
 	delete reqs;
+	delete status;
 }
 
 void master::send_partition_info() {
@@ -311,7 +327,7 @@ void master::send_partition_info() {
 
 	//发送所有缓冲区中的数据
 	MPI_Request *reqs = new MPI_Request[COMPUTE_SIZE];
-	//MPI_Status status[COMPUTE_SIZE];
+	MPI_Status *status =  new MPI_Status[COMPUTE_SIZE];
 
 
 	std::string partition_info = m_ring->get_graph_info();
@@ -357,7 +373,14 @@ void master::send_partition_info() {
 			&reqs[i]);
 	}
 	//等待所有发送都完成
-	MPI_Waitall(COMPUTE_SIZE, reqs, MPI_STATUS_IGNORE);
+	MPI_Waitall(COMPUTE_SIZE, reqs, status);
+	for (int i = 0; i < COMPUTE_SIZE; i++) {
+		if (status[i].MPI_ERROR != MPI_SUCCESS) {
+			LOG_TRIVIAL(error) << "send_partition_info msg error, rank:"
+				<< index_to_machine[i] << ", error code "
+				<< status[i].MPI_ERROR;
+		}
+	}
 	delete reqs;
 }
 
@@ -462,7 +485,7 @@ void master::distributing_graph() {
 
 		//发送所有缓冲区中的数据
 		MPI_Request *reqs = new MPI_Request[COMPUTE_SIZE];
-		//MPI_Status status[COMPUTE_SIZE];
+		MPI_Status *status = new MPI_Status[COMPUTE_SIZE];
 		//发送数据
 		
 		for (int i = 0; i < COMPUTE_SIZE; i++) {
@@ -475,7 +498,14 @@ void master::distributing_graph() {
 				&reqs[i]);
 		}
 		//等待所有发送都完成
-		MPI_Waitall(COMPUTE_SIZE, reqs, MPI_STATUS_IGNORE);
+		MPI_Waitall(COMPUTE_SIZE, reqs, status);
+		for (int i = 0; i < COMPUTE_SIZE; i++) {
+			if (status[i].MPI_ERROR != MPI_SUCCESS) {
+				LOG_TRIVIAL(error) << "distributing graph msg error, rank:"
+					<< index_to_machine[i] << ", error code "
+					<< status[i].MPI_ERROR;
+			}
+		}
 		//发送所有缓冲区中的数据end
 		delete[] reqs;
 	}
@@ -661,6 +691,7 @@ void master::go()
 						//处理worker运行信息，并处理。
 						process_run_info_and_binary_partition();
 						//继续迭代
+						
 						set_all_worker_state(NODE_STATE::IN_ITERATION);
 						set_current_state(NODE_STATE::IN_ITERATION);
 					}
@@ -764,7 +795,13 @@ void master::recv_msg_from_worker()
 
 	//等待所有计算节点的消息
 	MPI_Waitall(COMPUTE_SIZE, reqs, status);
-
+	for (int i = 0; i < COMPUTE_SIZE; i++) {
+		if (status[i].MPI_ERROR != MPI_SUCCESS) {
+			LOG_TRIVIAL(error) << "recv_msg_from_worker error, rank:"
+				<< index_to_machine[i] << ", error code "
+				<< status[i].MPI_ERROR;
+		}
+	}
 	/*LOG_TRIVIAL(info) << "master(" << m_rank << ") TEST";
 	while (1) {}*/
 	//处理所有消息
@@ -890,21 +927,25 @@ inline void master::process_run_info_and_binary_partition()
 		max2 = iter_max2->first;
 
 		//比较时间差距，如果相差两倍以上就分裂
-		if (iter_max1->second.runtime > iter_max2->second.runtime) {
-			
+		//if (iter_max1->second.runtime > iter_max2->second.runtime) {
+		if(m_run_info.size() == 1){//测试用
 			//开始发送分裂消息
 			master_binary_partition_worker_msg *msg 
 				= new master_binary_partition_worker_msg();
 			msg->set_master_id(m_rank);
 			send_msg_to_one_worker(msg, max1);
 
+			
 			ecgraph::byte_t *recv_msg_buf = new ecgraph::byte_t[MAX_NONDATA_SIZE];
+			
 			//等待分裂的worker发过来的ring环更新信息
 			MPI_Status status;
 			MPI_Recv((void *)recv_msg_buf, MAX_NONDATA_SIZE,
 				MPI_BYTE, max1, HASH_INFO_TAG, MPI_COMM_WORLD, &status);
 			int count;
 			MPI_Get_count(&status, MPI_BYTE, &count);
+
+			LOG_TRIVIAL(info) << "master(" << m_rank << ") recv worker_send_ring_info_msg";
 
 			std::string json_msg(recv_msg_buf, count);
 			worker_send_ring_info_msg  ring_info_msg_from_worker;
