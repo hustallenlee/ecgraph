@@ -343,11 +343,21 @@ void worker<update_type>::send_update() {
 					MPI_COMM_WORLD,
 					&reqs[i - my_flag]);
 			}
+			/*if (m_rank == 2) {
+				LOG_TRIVIAL(info) << "worker(" << m_rank << ") m_in_buffer send update";
+				m_in_buffer->show();
+			}*/
 			//将发往本计算节点的缓冲区中的数据直接写入本机接收缓存
 			if (!m_in_buffer->push(send_buf[self_index], length[self_index])) {
 				LOG_TRIVIAL(error) << "worker(" << m_rank << ") m_in_buffer should be reset";
 				exit(0);
 			}
+			/*LOG_TRIVIAL(info) << "worker(" << m_rank 
+				<< ") m_in_buffer local updates: "<< length[self_index];
+			if (m_rank == 2) {
+				LOG_TRIVIAL(info) << "worker(" << m_rank << ") m_in_buffer send update";
+				m_in_buffer->show();
+			}*/
 			//等待所有发送都完成
 			MPI_Waitall(WORKER_SIZE - my_flag, reqs, status);
 			for (int i = 0; i < (WORKER_SIZE - my_flag); i++) {
@@ -464,11 +474,19 @@ void worker<update_type>::handle_update_data(ecgraph::byte_t * buf, int len)
 	
 	update_type *update_buf = (update_type *)(buf);
 	int update_len = len / sizeof(update_type);
-	LOG_TRIVIAL(info) << "worker(" << m_rank << ") received updates " << update_len;
+	/*LOG_TRIVIAL(info) << "worker(" << m_rank << ") received updates " << update_len;
+	if (m_rank == 2) {
+		LOG_TRIVIAL(info) << "worker(" << m_rank << ") m_in_buffer info handle update data";
+		m_in_buffer->show();
+	}*/
 	if (!m_in_buffer->push(update_buf, update_len)) {
 		LOG_TRIVIAL(error) << "worker(" << m_rank << ") m_in_buffer should be reset";
 		exit(0);
 	}
+	/*if (m_rank == 2) {
+		LOG_TRIVIAL(info) << "worker(" << m_rank << ") m_in_buffer info handle update data";
+		m_in_buffer->show();
+	}*/
 }
 
 
@@ -811,8 +829,8 @@ inline void worker<update_type>::binay_partition_myself()
 	}
 	m_algorithm->get_degree().resize(local_end - local_start +1);
 	m_algorithm->get_result().resize(local_end - local_start + 1);
-	LOG_TRIVIAL(info) << "degree[0] " << degree[0] << " result[0] " << result[0]
-		<<"size "<< m_algorithm->get_degree().size();
+	/*LOG_TRIVIAL(info) << "degree[0] " << degree[0] << " result[0] " << result[0]
+		<<"size "<< m_algorithm->get_degree().size();*/
 	delete[] send_buf[0];
 	delete[] send_buf[1];
 	//========================================================================
@@ -838,7 +856,7 @@ inline void worker<update_type>::sync_data_to_worker(int worker_rank, int end)
 			MPI_Send((void*)datas, length*sizeof(worker_sync_data_t),
 				MPI_BYTE, worker_rank, DATA_SYNC_TAG, MPI_COMM_WORLD);
 			length = 0;
-			LOG_TRIVIAL(info) << "worker(" << m_rank << ") sync_data_to_worker";
+			//LOG_TRIVIAL(info) << "worker(" << m_rank << ") sync_data_to_worker";
 		}
 	}
 
@@ -929,8 +947,8 @@ void worker<update_type>::recv()
 						LOG_TRIVIAL(warn) << "expect a change state message";
 						continue;
 					}
-					LOG_TRIVIAL(info) << "worker(" << m_rank
-						<< ") recv change state msg source " << status.MPI_SOURCE;
+					/*LOG_TRIVIAL(info) << "worker(" << m_rank
+						<< ") recv change state msg source " << status.MPI_SOURCE;*/
 					master_change_worker_state_msg msg;
 					msg.load(std::string((char *)recv_buf, count));
 					set_current_state((NODE_STATE)msg.get_state_index());
@@ -945,7 +963,7 @@ void worker<update_type>::recv()
 					break;
 				}
 				default:
-					LOG_TRIVIAL(warn) << "[BEFORE_START]not an expected message";
+					LOG_TRIVIAL(warn) <<"worker("<<m_rank<< ") [BEFORE_START]not an expected message";
 					break;
 				}
 			}
@@ -991,8 +1009,8 @@ void worker<update_type>::recv()
 						continue;
 					}
 					//LOG_TRIVAIL
-					LOG_TRIVIAL(info) << "worker(" << m_rank
-						<< ") recv change state msg source " << status.MPI_SOURCE;
+					/*LOG_TRIVIAL(info) << "worker(" << m_rank
+						<< ") recv change state msg source " << status.MPI_SOURCE;*/
 					master_change_worker_state_msg msg;
 					msg.load(std::string((char *)recv_buf, count));
 					set_current_state((NODE_STATE)msg.get_state_index());
@@ -1153,7 +1171,8 @@ void worker<update_type>::recv()
 
 							//迭代一次
 							
-							//下面两行程序顺序不要换
+							//下面几行程序顺序不要换
+							m_algorithm->reset_all();
 							graph_thrd = new std::thread(m_f_algorithm);
 							send_thrd = new std::thread(m_f_send);
 							//LOG_TRIVIAL(info) << "worker(" << m_rank << ") algorithm info";
@@ -1186,8 +1205,9 @@ void worker<update_type>::recv()
 							if (graph_thrd != NULL) {
 								delete graph_thrd;
 							}
-							LOG_TRIVIAL(info) << "worker(" 
-								<< m_rank << ") recv change state msg";
+							m_algorithm->reset_all();
+							/*LOG_TRIVIAL(info) << "worker(" 
+								<< m_rank << ") recv change state msg";*/
 							
 							master_change_worker_state_msg msg;
 							msg.load(std::string((char *)recv_buf, count));
@@ -1290,7 +1310,7 @@ void worker<update_type>::recv()
 					}
 					case HASH_INFO_TAG:
 						//更新本机信息
-						if(m_rank == 2){
+						/*if(m_rank == 2){
 							LOG_TRIVIAL(info) << "result[0]:"
 								<< m_algorithm->get_result()[0]
 								<< " result[1]:"
@@ -1303,10 +1323,10 @@ void worker<update_type>::recv()
 								<< m_algorithm->get_degree()[1]
 								<< " degree[2]:"
 								<< m_algorithm->get_degree()[2];
-						}
+						}*/
 						handle_hash_info_data(recv_buf, count);
 						m_algorithm->load_graph(m_partition_filename);
-						if (m_rank == 2) {
+						/*if (m_rank == 2) {
 							LOG_TRIVIAL(info) << "result[0]:"
 								<< m_algorithm->get_result()[0]
 								<< " result[1]:"
@@ -1319,7 +1339,7 @@ void worker<update_type>::recv()
 								<< m_algorithm->get_degree()[1]
 								<< " degree[2]:"
 								<< m_algorithm->get_degree()[2];
-						}
+						}*/
 						//m_algorithm->init();
 						//m_algorithm->show_graph_info();
 						break;

@@ -531,7 +531,7 @@ public:
 	virtual void iterate_once() {
 		LOG_TRIVIAL(info) << "iterator " << super_step();
 		//启动读文件线程
-		reset_all();
+		//reset_all();
 		m_disk_io->start_write(m_filename);
 		//LOG_TRIVIAL(info) << "reading file " << m_filename;
 		
@@ -552,7 +552,7 @@ public:
 		next_super_step();
 		delete m_scatter_thrd;
 		delete m_gather_thrd;
-		reset_all();
+		//reset_all();
 	}
 	
 	//run the super step 废弃

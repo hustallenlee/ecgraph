@@ -133,6 +133,9 @@ public:
 					//update the new array
 					(*aux_array)[local_address].temp += update.update_value ;
 				//}
+					//测试用
+					//LOG_TRIVIAL(info) << "worker(" << get_rank() << ") update.id " << update.id
+					//	<< " update.update_value " << update.update_value;
 			}
 			for (auto iter = aux_array->begin(); iter != aux_array->end(); iter++){
 				local_address = iter - aux_array->begin();
