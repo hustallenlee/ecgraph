@@ -6,6 +6,8 @@
 #include "utils/types.h"
 #include "utils/type_utils.h"
 #include "core/engine.h"
+#include "core/update.h"
+
 #include <iostream>
 #include <vector>
 #include <string>
@@ -13,59 +15,45 @@
 #include <cmath>
 #include <fstream>
 #include <iomanip>
-#include <climits>
-typedef struct{
-   ecgraph::vertex_t label;
-}array_t;
 
-typedef struct{
-    ecgraph::vertex_t id;
-    ecgraph::vertex_t update_value;
-}update_t;
 
-class wcc: public engine<update_t >{
+class wcc: public engine<update_weight_int_t>{
 private:
-	//std::vector<bool> *update_bitset;
-    std::vector<array_t > *aux_array; //auxiliary array
+
+    //std::vector<array_t > *aux_array; //auxiliary array
     int edge_size;
-    //int flag;   //indicate which is the old
-	//ecgraph::weight_t temp;
+
 public:
-	wcc(std::string fn, int mloop): engine(fn, mloop){
+	void init(){
 
 
 		//update_bitset = new std::vector<bool>;
-    	aux_array = new std::vector<array_t>(m_vertex_num); //auxiliary array
+    	//aux_array = new std::vector<array_t>(m_vertex_num); //auxiliary array
     	edge_size = sizeof(ecgraph::edge_t);
-	
-		//ua.resize(vertex_num, UINT_MAX);
-		
-		//for (auto iter = aux_array->begin(), iter != aux_array->end(); iter ++){
-		//	iter->label = iter -aux_array->begin();
-		//}
+
 	}
 
-	~ wcc(){
+	void clear(){
 		//delete update_bitset;
-		delete aux_array;
+		//delete aux_array;
 	}
 	void scatter() {
 		//init_read();
-		LOG_TRIVIAL(info)<<"scatter ...";
+		//LOG_TRIVIAL(info)<<"scatter ...";
 		ecgraph::edge_t edge;
 		//ecgraph::vertex_t min;
 		ecgraph::vertex_t src;
 		ecgraph::vertex_t dst;
-		update_t update;
+		update_weight_int_t update;
 		if (super_step() == 0){//set every vertex's id
-
-			for (auto iter = aux_array->begin(); iter != aux_array->end(); iter ++){
-				iter->label = iter - aux_array->begin();
+			auto begin = result.begin();
+			for (auto iter = result.begin(); iter != result.end(); iter ++){
+					*iter = get_gobal_graph_vid(iter - begin);
 			}
 		}
 		while( get_next_edge(edge) ){
-			src = (*aux_array)[edge.src].label;
-			dst = (*aux_array)[edge.dst].label;
+			src = result[edge.src];
+			dst = result[edge.dst];
 				
 			if (src < dst){
 				update.id = edge.dst;
@@ -75,17 +63,15 @@ public:
 				update.id = edge.src;
 				update.update_value = dst;
 			}
-			add_update(update);
-			//min = src < dst ? src : dst ;
-			//ua[edge.src] = min < ua[edge.src] ? min : ua[edge.src]; 
-			//ua[edge.dst] = min < ua[edge.dst] ? min : ua[edge.dst];
+			add_update(update, false);
+
         }
 	}
 
 	bool gather(){
 		LOG_TRIVIAL(info)<<"gatter ...";
 		ecgraph::vertex_t updated_num = 0;
-		update_t update;
+		update_weight_int_t update;
 		//auto start = ua.begin();
 		int pos = 0;
 
@@ -98,12 +84,12 @@ public:
 		}*/
 
 		while(get_update(update)){
-			if ( (*aux_array)[update.id].label > update.update_value ){
-				(*aux_array)[update.id].label = update.update_value;
+			if ( result[update.id] > update.update_value ){
+				result[update.id] = update.update_value;
 				updated_num ++;
 			}
 		}
-		LOG_TRIVIAL(info)<<updated_num<<" / "<<m_vertex_num;
+		LOG_TRIVIAL(info)<<updated_num<<" / "<<get_graph_vertices_num();
         if ( updated_num == 0 ){ //all bits are 1
            	LOG_TRIVIAL(info) << "convergence and exit after "
 								<<super_step() +1 
@@ -115,12 +101,11 @@ public:
 		return false;
 	}
 	void output(){
-    	std::ofstream out("output.csv", std::ios::out);
-    	auto begin = (*aux_array).begin();
-    	for (auto iter = begin; iter != (*aux_array).end(); iter++){
-        	out << iter -begin + m_min_id<<" "
-            	<<std::fixed<<std::setprecision(16)
-            	<<iter -> label<<std::endl;
+    	std::ofstream out("wcc_output_"+std::to_string(get_rank()) + ".csv", std::ios::out);
+    	auto begin = result.begin();
+    	for (auto iter = begin; iter != result.end(); iter++){
+        	out << get_gobal_graph_vid(iter -begin)<<" "
+            	<<*iter<<std::endl;
     	}
     	/*auto begin = (*aux_array).begin();
     	for (auto iter = begin; iter != (*aux_array).end(); iter++){

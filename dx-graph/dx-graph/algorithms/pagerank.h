@@ -16,20 +16,16 @@
 #include <fstream>
 #include <iomanip>
 
-typedef struct{
-	ecgraph::weight_t temp;
-}array_t;
-
 class pagerank: public engine<update_weight_double_t >{
 private:
-	array_t init_array;
+	ecgraph::weight_t init_array;
 	ecgraph::weight_t init_weight;           //初始权值
 
 	//收敛标记
 	std::vector<bool> *update_bitset;
 	
 	//辅助数组，用来存放临时的结果
-    std::vector<array_t > *aux_array; //auxiliary array, 辅助数组
+    std::vector<ecgraph::weight_t > *aux_array; //auxiliary array, 辅助数组
 
 	ecgraph::weight_t temp;
 
@@ -40,11 +36,11 @@ public:
 		init_weight = 0.15 / get_gobal_graph_vertices_num();
 		//init_array.degree = 0;
     	//init_array.res = init_weight;
-    	init_array.temp = 0;
+    	init_array = 0;
 
 		update_bitset = new std::vector<bool>(get_graph_vertices_num(), false);
 
-    	aux_array = new std::vector<array_t>(get_graph_vertices_num(), init_array); //auxiliary array
+    	aux_array = new std::vector<ecgraph::weight_t>(get_graph_vertices_num(), init_array); //auxiliary array
 
 		//初始化result数组
 		for (auto &item : result) {
@@ -131,7 +127,7 @@ public:
 				local_address = get_local_graph_vertices_offset(update.id);
 				//if ((*update_bitset)[local_address] == false){
 					//update the new array
-					(*aux_array)[local_address].temp += update.update_value ;
+					(*aux_array)[local_address] += update.update_value ;
 				//}
 					//测试用
 					//LOG_TRIVIAL(info) << "worker(" << get_rank() << ") update.id " << update.id
@@ -145,7 +141,7 @@ public:
 					continue;
 				}
 
-				temp = init_weight + 0.85 * iter->temp;
+				temp = init_weight + 0.85 * (*iter);
 				if (fabs(result[local_address] - temp ) < 0.00000000001){
 					(*update_bitset)[local_address] = true;
 					m_updated_num ++ ;	
@@ -153,7 +149,7 @@ public:
 				else{
 					result[iter - aux_array->begin()] = temp;
 				}
-				iter -> temp =0.0;
+				*iter =0.0;
 			}
 			LOG_TRIVIAL(info)<<"gather "<< get_gobal_graph_vertices_num() - m_updated_num
 				<<" / "<< get_gobal_graph_vertices_num();
@@ -167,7 +163,7 @@ public:
 		return false;
 	}
 	void output(){
-    	std::ofstream out("output_"+std::to_string(get_rank())+".csv", std::ios::out);
+    	std::ofstream out("pagerank_output_"+std::to_string(get_rank())+".csv", std::ios::out);
     	auto begin = result.begin();
 		LOG_TRIVIAL(info) << "worker(" << get_rank() << ") in output";
     	for (auto iter = begin; iter != result.end(); iter++){

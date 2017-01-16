@@ -46,10 +46,11 @@ namespace ecgraph{
 			vertex_t m_partition_start_vid;
 			vertex_t m_partition_end_vid;
 
-			vertex_t m_partition_edges_num;
+			long long m_partition_edges_num;
 			vertex_t m_partition_mid_vid;
 
 			vertex_t m_partition_id;
+
         public:
 
             typedef vertex_t graph_size_t;
@@ -147,7 +148,7 @@ namespace ecgraph{
 				return m_partition_end_vid;
 			}
 
-			unsigned long get_partition_edges_num() {
+			long long get_partition_edges_num() {
 				return m_partition_edges_num;
 			}
 
