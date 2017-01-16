@@ -14,6 +14,7 @@
 #include <ctime>
 #include <set>
 #include <cstdio>
+#include <algorithm>
 
 #include "utils/types.h"
 #include "utils/buffer.h"
@@ -23,6 +24,7 @@
 #include "packet/messages.h"
 #include "packet/message_factory.h"
 #include "core/engine.h"
+#include "utils/graph_data_sort.h"
 
 using namespace boost::property_tree;
 using namespace boost::gregorian;
@@ -84,6 +86,8 @@ public:
 	void sync_data_to_worker(int worker_rank, int start);
 	void set_one_worker_state(NODE_STATE state, int worker_rank);
 	void handle_data_sync(ecgraph::byte_t * buf, int len);
+	void disk_sort();
+	ecgraph::vertex_t get_graph_mid();
 	//接收数据，可以是各种数据
 	void recv();
 
@@ -893,6 +897,120 @@ inline void worker<update_type>::handle_data_sync(ecgraph::byte_t * buf, int len
 }
 
 template<typename update_type>
+inline void worker<update_type>::disk_sort()
+{
+	//对图数据进行外部排序
+	graph_data_sort(m_algorithm, m_partition_filename);
+}
+
+
+//a*|v| + |E|
+//a为图的平均度
+template<typename update_type>
+inline ecgraph::vertex_t worker<update_type>::get_graph_mid()
+{
+	//对排好序的图数据取中点
+
+
+	ecgraph::edge_t  *edge_buf = new ecgraph::edge_t[READ_GRAPH_DATA_ONCE];
+
+	//打开文件读
+	std::ifstream graphdata_file(m_partition_filename);
+	
+	//ecgraph::graph_data gd(argv[1]);
+
+	//获得全图的边数
+	long long edges_num = m_algorithm->get_edges_num();
+
+	//std::cout << "edges_num " << edges_num << std::endl;
+
+	//获得全图的结点数
+	ecgraph::vertex_t vertices_num = m_algorithm->get_gobal_graph_vertices_num();
+
+	LOG_TRIVIAL(info) << "worker(" << m_rank << ") vertices_num " 
+					<< vertices_num;
+
+	//获得图分区的开始结点
+	ecgraph::vertex_t partition_start_vid = m_algorithm->get_start_vid();
+
+	LOG_TRIVIAL(info) << "worker(" << m_rank << ") partition_start_vid " 
+					<< partition_start_vid;
+
+	ecgraph::vertex_t partition_end_vid = m_algorithm->get_end_vid();
+
+	LOG_TRIVIAL(info) << "worker(" << m_rank << ") partition_end_vid "
+					<< partition_end_vid;
+
+	//获得分区的结点数
+	ecgraph::vertex_t partition_vertices_num 
+		= m_algorithm->get_graph_vertices_num();
+
+	LOG_TRIVIAL(info) << "worker(" << m_rank << ") partition_vertices_num " 
+						<< partition_vertices_num;
+	
+	//获得图分区的边数
+	long long partition_edges_num = m_algorithm->get_partition_edges_num();
+	LOG_TRIVIAL(info) << "worker(" << m_rank << ") partition_edges_num "
+					<< partition_edges_num;
+
+
+	//全图的平均度
+	long long average_degree = edges_num / vertices_num;
+	
+	//外存模式时，设置为1看看
+	average_degree = 1;
+
+
+	//全分区的COST
+	long long partition_total_cost
+		= average_degree * partition_vertices_num + partition_edges_num;
+	//以中点为段的期望COST
+	//std::cout << "here" << std::endl;
+	long long expect_cost = partition_total_cost / 2;
+
+
+	/*std::cout << "avg degree " << average_degree
+		<< " partition_total_cost " << partition_total_cost
+		<< " expect_cost " << expect_cost << std::endl;*/
+
+	//开始读排序后的图，找到my_mid
+	ecgraph::vertex_t my_mid = partition_start_vid;
+
+	long long edges_num_tmp = 0;
+	long long cost_tmp = 0;
+	int read_num = 0;
+	bool stop = false;
+	int yu = 0;
+
+	
+	while (!graphdata_file.eof()) {
+
+		read_num = graphdata_file.read((char *)edge_buf + yu,
+			READ_GRAPH_DATA_ONCE*sizeof(ecgraph::edge_t) - yu).gcount();
+		read_num += yu;
+		yu = read_num % sizeof(ecgraph::edge_t);
+		read_num = read_num / sizeof(ecgraph::edge_t);
+
+		for (int i = 0; i < read_num; i++) {
+			edges_num_tmp++;
+			my_mid = edge_buf[i].src;
+			cost_tmp = ((
+				(long long)my_mid +
+				(long long)vertices_num -
+				(long long)partition_start_vid
+				) % (long long)vertices_num)* average_degree + edges_num_tmp;
+			if (cost_tmp >= expect_cost) {
+				stop = true;
+				break;
+			}
+		}
+		if (stop) break;
+	}
+
+	return my_mid;
+}
+
+template<typename update_type>
 void worker<update_type>::recv()
 {
 	//断言，需要为计算节点
@@ -1043,11 +1161,30 @@ void worker<update_type>::recv()
 			#endif
 			//首先关掉m_graph_partition
 			m_graph_partition->close();
+			
 			//使算法加载图数据
 			m_algorithm->load_graph(m_partition_filename);
 
 			//初始化
 			m_algorithm->init();
+
+			//求图进行均衡划分的中值
+			LOG_TRIVIAL(info) << "worker(" << m_rank << ") sorting";
+			disk_sort();
+			LOG_TRIVIAL(info) << "worker(" << m_rank << ") sorted";
+
+
+			ecgraph::vertex_t mid_after_calculation = get_graph_mid();
+			(*m_partition_config)["partition_mid_vid"] 
+				= std::to_string(mid_after_calculation);
+			m_algorithm->set_partition_mid_vid(mid_after_calculation);
+
+			(*m_partition_config).dump(m_partition_filename + ".json");
+			
+			LOG_TRIVIAL(info) << "worker(" << m_rank << ") mid vid "
+				<< (*m_partition_config)["partition_mid_vid"];
+
+			
 
 			bool next = true;
 			while (next) {
@@ -1088,6 +1225,7 @@ void worker<update_type>::recv()
 							<< ") expect a change state message";
 						continue;
 					}
+
 					break;
 				}
 				case DATA_SYNC_TAG:

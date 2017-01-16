@@ -928,7 +928,7 @@ inline void master::process_run_info_and_binary_partition()
 
 		//比较时间差距，如果相差两倍以上就分裂
 		//if (iter_max1->second.runtime > iter_max2->second.runtime) {
-		if(m_run_info.size() == 1){//测试用
+		if(m_run_info.size() ==1  && m_current_loop == 2){//测试用
 			//开始发送分裂消息
 			master_binary_partition_worker_msg *msg 
 				= new master_binary_partition_worker_msg();

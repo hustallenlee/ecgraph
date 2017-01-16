@@ -99,6 +99,8 @@ protected:
 	ecgraph::vertex_t m_partition_mid_vid;
 	//图分区结点数量
 	ecgraph::vertex_t m_partition_vertices_num;
+	//分区边的数量
+	long long m_partition_edges_num;
 	//===================================
 	
 	ecgraph::edge_t *m_edge_buffer;
@@ -223,6 +225,7 @@ public:
 		m_partition_start_vid = m_graphdata_file->get_partition_start_vid();
 		m_partition_end_vid = m_graphdata_file->get_partition_end_vid();
 		m_partition_mid_vid = m_graphdata_file->get_partition_mid_vid();
+		m_partition_edges_num = m_graphdata_file->get_partition_edges_num();
 
 		if (m_partition_end_vid >= m_partition_start_vid) {
 			m_partition_vertices_num = m_partition_end_vid - m_partition_start_vid + 1;
@@ -304,6 +307,24 @@ public:
 	ecgraph::vertex_t get_gobal_graph_vid(ecgraph::vertex_t local_id) {
 		return (local_id + m_vertices_num + m_partition_start_vid) % m_vertices_num;
 	}
+	long long get_edges_num() {
+		return m_edge_num;
+	}
+	ecgraph::vertex_t get_start_vid() {
+		return m_partition_start_vid;
+	}
+
+	ecgraph::vertex_t get_end_vid() {
+		return m_partition_end_vid;
+	}
+
+	long long get_partition_edges_num() {
+		return m_partition_edges_num;
+	}
+
+	void set_partition_mid_vid(ecgraph::vertex_t mid) {
+		m_partition_mid_vid = mid;
+	}
 	void show_graph_info() {
 		LOG_TRIVIAL(info) << "m_type " << m_type;
 		LOG_TRIVIAL(info) << "m_vertices_num " << m_vertices_num;
@@ -312,6 +333,7 @@ public:
 		LOG_TRIVIAL(info) << "m_partition_end_vid " << m_partition_end_vid;
 		LOG_TRIVIAL(info) << "m_partition_mid_vid " << m_partition_mid_vid;
 		LOG_TRIVIAL(info) << "m_partition_vertices_num " << m_partition_vertices_num;
+		LOG_TRIVIAL(info) << "m_partition_edges_num " << m_partition_edges_num;
 	}
 	//========================================
 

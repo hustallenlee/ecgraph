@@ -164,6 +164,7 @@
     <ClInclude Include="dx-graph\utils\consistent_hash.h" />
     <ClInclude Include="dx-graph\utils\controll_info.h" />
     <ClInclude Include="dx-graph\utils\graph_data.h" />
+    <ClInclude Include="dx-graph\utils\graph_data_sort.h" />
     <ClInclude Include="dx-graph\utils\log_wrapper.h" />
     <ClInclude Include="dx-graph\utils\mylock.h" />
     <ClInclude Include="dx-graph\utils\types.h" />
