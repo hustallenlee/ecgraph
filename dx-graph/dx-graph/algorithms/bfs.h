@@ -6,6 +6,8 @@
 #include "utils/types.h"
 #include "utils/type_utils.h"
 #include "core/engine.h"
+#include "core/update.h"
+
 #include <iostream>
 #include <vector>
 #include <string>
@@ -14,26 +16,24 @@
 #include <fstream>
 #include <iomanip>
 #include <climits>
-typedef struct{
+/*typedef struct{
 	ecgraph::vertex_t label;
-}array_t;
+}array_t;*/
 
-typedef struct{
-	ecgraph::vertex_t id;
-	ecgraph::vertex_t update_value;
-}update_t;
-
-class bfs: public engine<update_t >{
+class bfs: public engine<update_weight_int_t>{
 private:
 	//std::vector<bool> *update_bitset;
-    std::vector<array_t > *aux_array; //auxiliary array
-    int edge_size;
+    //std::vector<array_t > *aux_array; //auxiliary array
+    //int edge_size;
 	ecgraph::vertex_t root;
 public:
-	bfs(std::string fn, int mloop, int rt): engine(fn, mloop){
+	void init(){
 
 
 		//update_bitset = new std::vector<bool>;
+		for (auto & item : result) {
+			item = UINT_MAX
+		}
     	aux_array = new std::vector<array_t>(m_vertex_num, {UINT_MAX}); //auxiliary array
     	edge_size = sizeof(ecgraph::edge_t);
 		root = rt;

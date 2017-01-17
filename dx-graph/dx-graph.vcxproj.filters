@@ -80,11 +80,17 @@
     <ClInclude Include="dx-graph\utils\graph_data_sort.h">
       <Filter>utils</Filter>
     </ClInclude>
+    <ClInclude Include="dx-graph\algorithms\wcc.h">
+      <Filter>algorithms</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="ClassDiagram.cd" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="dx-graph\algorithms\wcc.cpp">
+      <Filter>algorithms</Filter>
+    </ClCompile>
     <ClCompile Include="dx-graph\algorithms\pagerank.cpp">
       <Filter>algorithms</Filter>
     </ClCompile>

@@ -151,6 +151,7 @@
   <ItemGroup>
     <ClInclude Include="dx-graph\algorithms\old_pagerank.h" />
     <ClInclude Include="dx-graph\algorithms\pagerank.h" />
+    <ClInclude Include="dx-graph\algorithms\wcc.h" />
     <ClInclude Include="dx-graph\core\worker.h" />
     <ClInclude Include="dx-graph\core\master.h" />
     <ClInclude Include="dx-graph\core\engine.h" />
@@ -175,6 +176,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="dx-graph\algorithms\pagerank.cpp" />
+    <ClCompile Include="dx-graph\algorithms\wcc.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
