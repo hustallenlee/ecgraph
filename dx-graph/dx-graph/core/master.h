@@ -929,7 +929,7 @@ inline void master::process_run_info_and_binary_partition()
 		//if (iter_max1->second.runtime > iter_max2->second.runtime) {
 		//if(m_run_info.size() ==2  && (m_current_loop == 2
 		if (m_current_loop == 2
-			|| m_current_loop == 3 || m_current_loop == 4 
+			//|| m_current_loop == 3 || m_current_loop == 4 
 			){//测试用
 			//开始发送分裂消息
 			master_binary_partition_worker_msg *msg 

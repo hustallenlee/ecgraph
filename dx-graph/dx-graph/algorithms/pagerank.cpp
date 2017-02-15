@@ -43,7 +43,7 @@ int main(int argc, char **argv) {
 	
 	if (self_rank == MASTER_RANK) { //this is a master
 		//rank值为1，2，3三个计算节点
-		std::vector<ecgraph::vertex_t> worker_nodes = {1};
+		std::vector<ecgraph::vertex_t> worker_nodes = {1,2};
 		ecgraph::graph_data gd(argv[1]);
 		ecgraph::consistent_hash ring(worker_nodes, &gd);
 		//ecgraph::buffer<ecgraph::edge_t> file_buffer(GRAPH_DATA_BUFFER_SIZE);

@@ -63,13 +63,15 @@ public:
 	}
 	void scatter() {
 		//init_read();
-		//LOG_TRIVIAL(info)<<"scatter ...";
+		LOG_TRIVIAL(info) << "worker("
+			<< get_rank() <<") scatter ...";
 		ecgraph::edge_t edge;
 		update_weight_double_t update;
 
 		if (super_step() == 0){//get every vertex's degree
 			#ifdef MY_DEBUG
-			LOG_TRIVIAL(info) << "scatter super step: "<<super_step();
+			LOG_TRIVIAL(info) << "worker("
+				<< get_rank() << "scatter super step: "<<super_step();
 			#endif
 
 			//统计度
@@ -84,13 +86,22 @@ public:
 						<< get_rank() << ") count "<<count;
 				}*/
 			}
-			/*LOG_TRIVIAL(info) << "compute("
-				<< get_rank() << ") count "<<count;*/
+			/*LOG_TRIVIAL(info) << "worker("
+				<< get_rank() << ") degree "<<count;
+			for (auto iter = degree.begin(); iter != degree.end();iter ++) {
+				LOG_TRIVIAL(info) << "worker("
+					<< get_rank() << ") degree " 
+					<< iter - degree.begin()<<" "
+					<< *iter;
+			}*/
+
 		}
 		else{
 			#ifdef MY_DEBUG
-			LOG_TRIVIAL(info) << "scatter super step: " << super_step();
+			LOG_TRIVIAL(info) << "worker("
+				<< get_rank() << ") scatter super step: " << super_step();
 			#endif
+
 			long long local_address;
 			//int count;
 			while( get_next_edge(edge) ){
@@ -107,6 +118,9 @@ public:
 						exit(0);
 					}
 					update.update_value =result[local_address]/ degree[local_address];
+					/*LOG_TRIVIAL(info) << "worker(" << get_rank() << ") update.id " << update.id
+						<< " update.update_value " << update.update_value
+						<< " result "<< typeid(result[local_address]).name();*/
 					add_update(update, false);
 				//}
 			}

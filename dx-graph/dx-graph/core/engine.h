@@ -147,13 +147,15 @@ protected:
 
 	//下面数组中间结果
 	//std::vector<ecgraph::weight_t> result;
-	decltype(update_type.update_value) get_type;
-	std::vector<decltype(get_type)> result;
+	update_type get_update_type;
+	std::vector<decltype(get_update_type.update_value)> result;
 	//度
 	std::vector<int> degree;
 public:
 	
 	engine() {
+
+		LOG_TRIVIAL(info) << "TYPE " << typeid(get_update_type.update_value).name();
 		//超步计数
 		m_step_counter = 0;
 		//边的大小
@@ -241,14 +243,14 @@ public:
 		result.resize(m_partition_vertices_num);
 		degree.resize(m_partition_vertices_num);
 	}
-	std::vector<decltype(get_type)> &get_result() {
+	std::vector<decltype(get_update_type.update_value)> &get_result() {
 		return result;
 	}
 	std::vector<int> &get_degree() {
 		return degree;
 	}
-	decltype(get_type) get_result_value_type() {
-		return get_type;
+	decltype(get_update_type.update_value) get_result_value_type() {
+		return get_update_type.update_value;
 	}
 	virtual ~ engine(){
 		if (m_disk_io != NULL) {
@@ -474,7 +476,7 @@ public:
 	//将所有缓存的update推出
 	void push_all_buffered_update() {
 		if (!m_out_buffer->push(m_out_update_buffer, m_out_update_buffer_offset)) {
-			LOG_TRIVIAL(error) << "engine m_out_buffer should be reset";
+			LOG_TRIVIAL(error) << "worker(" << get_rank() << ")engine m_out_buffer should be reset";
 			exit(0);
 		}
 
@@ -555,7 +557,8 @@ public:
 	}
 	//迭代一次
 	virtual void iterate_once() {
-		LOG_TRIVIAL(info) << "iterator " << super_step();
+		LOG_TRIVIAL(info) << "worker(" << get_rank() 
+			<< ")iterator " << super_step();
 		//启动读文件线程
 		//reset_all();
 		m_disk_io->start_write(m_filename);
