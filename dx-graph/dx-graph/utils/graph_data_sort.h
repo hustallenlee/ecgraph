@@ -22,7 +22,7 @@ void graph_data_sort(engine<update_type> *algorithm, std::string partition_filen
 	std::string sort_name = partition_filename + ".part";
 	ecgraph::buffer<ecgraph::edge_t> file_buf(GRAPH_DATA_BUFFER_SIZE);
 
-	int edge_num_each_part = READ_GRAPH_DATA_ONCE * 10;
+	int edge_num_each_part = READ_GRAPH_DATA_ONCE * 100;
 	ecgraph::edge_t  *edge_buf = new ecgraph::edge_t[edge_num_each_part];
 	int index = 0;
 	file_buf.start_write(partition_filename);

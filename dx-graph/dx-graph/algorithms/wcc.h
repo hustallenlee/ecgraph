@@ -39,7 +39,7 @@ public:
 	}
 	void scatter() {
 		//init_read();
-		//LOG_TRIVIAL(info)<<"scatter ...";
+		LOG_TRIVIAL(info)<<"scatter ...";
 		ecgraph::edge_t edge;
 		//ecgraph::vertex_t min;
 		ecgraph::vertex_t src;
@@ -51,25 +51,24 @@ public:
 					*iter = get_gobal_graph_vid(iter - begin);
 			}
 		}
-		while( get_next_edge(edge) ){
-			src = result[edge.src];
-			dst = result[edge.dst];
-				
-			if (src < dst){
+		while (get_next_edge(edge)) {
+			src = result[get_local_graph_vertices_offset(edge.src)];
+
+			//if (src < dst) {
 				update.id = edge.dst;
 				update.update_value = src;
-			}
-			if(src > dst){
+			//}
+			/*if (src > dst) {
 				update.id = edge.src;
 				update.update_value = dst;
-			}
+			}*/
 			add_update(update, false);
+		}
 
-        }
 	}
 
 	bool gather(){
-		LOG_TRIVIAL(info)<<"gatter ...";
+		LOG_TRIVIAL(info)<<"worker("<<get_rank()<<") gatter ...";
 		ecgraph::vertex_t updated_num = 0;
 		update_weight_int_t update;
 		//auto start = ua.begin();
@@ -82,22 +81,23 @@ public:
 				updated_num ++;
 			}
 		}*/
-
-		while(get_update(update)){
-			if ( result[update.id] > update.update_value ){
-				result[update.id] = update.update_value;
-				updated_num ++;
+		while (get_update(update)) {
+			if (result[get_local_graph_vertices_offset(update.id)] 
+				> update.update_value) {
+				result[get_local_graph_vertices_offset(update.id)] 
+					= update.update_value;
+				updated_num++;
 			}
 		}
-		LOG_TRIVIAL(info)<<updated_num<<" / "<<get_graph_vertices_num();
-        if ( updated_num == 0 ){ //all bits are 1
-           	LOG_TRIVIAL(info) << "convergence and exit after "
-								<<super_step() +1 
-								<< " iterations";
+		LOG_TRIVIAL(info) << "worker(" << get_rank() <<") "
+			<< updated_num << " / " << get_graph_vertices_num();
+		if (updated_num == 0) { //all bits are 1
+			LOG_TRIVIAL(info) << "convergence and exit after "
+				<< super_step() + 1
+				<< " iterations";
 			set_convergence();
-           	return true;
-        }
-		
+			return true;
+		}
 		return false;
 	}
 	void output(){
@@ -105,6 +105,7 @@ public:
     	auto begin = result.begin();
     	for (auto iter = begin; iter != result.end(); iter++){
         	out << get_gobal_graph_vid(iter -begin)<<" "
+				<<std::setiosflags(std::ios::fixed)
             	<<*iter<<std::endl;
     	}
     	/*auto begin = (*aux_array).begin();

@@ -146,8 +146,9 @@ protected:
 
 
 	//下面数组中间结果
-	std::vector<ecgraph::weight_t> result;
-
+	//std::vector<ecgraph::weight_t> result;
+	decltype(update_type.update_value) get_type;
+	std::vector<decltype(get_type)> result;
 	//度
 	std::vector<int> degree;
 public:
@@ -240,11 +241,14 @@ public:
 		result.resize(m_partition_vertices_num);
 		degree.resize(m_partition_vertices_num);
 	}
-	std::vector<ecgraph::weight_t> &get_result() {
+	std::vector<decltype(get_type)> &get_result() {
 		return result;
 	}
 	std::vector<int> &get_degree() {
 		return degree;
+	}
+	decltype(get_type) get_result_value_type() {
+		return get_type;
 	}
 	virtual ~ engine(){
 		if (m_disk_io != NULL) {
@@ -474,7 +478,7 @@ public:
 			exit(0);
 		}
 
-		LOG_TRIVIAL(info) << "compute("<< get_rank() <<") pushed all buffered update";
+		LOG_TRIVIAL(info) << "worker("<< get_rank() <<") pushed all buffered update";
 		m_out_update_buffer_offset = 0;
 		m_out_buffer->set_over();
 	}
@@ -568,12 +572,15 @@ public:
 		if (m_scatter_thrd->joinable()) {
 			m_scatter_thrd->join();
 		}
+
 		if (m_gather_thrd->joinable()) {
 			m_gather_thrd->join();
 		}
+
 		next_super_step();
 		delete m_scatter_thrd;
 		delete m_gather_thrd;
+
 		//reset_all();
 	}
 	

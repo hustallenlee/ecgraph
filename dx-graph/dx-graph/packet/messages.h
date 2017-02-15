@@ -506,6 +506,7 @@ public:
 class master_binary_partition_worker_msg : public base_message {
 private:
 	ecgraph::vertex_t m_master_id;
+	int m_sort;
 public:
 	master_binary_partition_worker_msg() {
 		m_msg_id = MASTER_BINARY_PARTITION_WORKER_MSGID;
@@ -522,6 +523,15 @@ public:
 			LOG_TRIVIAL(error) << "[master_binary_partition_worker_msg] illegal message, "
 				<< "no field named content.master_id";
 		}
+
+		try {
+			m_sort = pt.get<int>("content.sort");
+
+		}
+		catch (boost::property_tree::ptree_bad_path) {
+			LOG_TRIVIAL(error) << "[master_binary_partition_worker_msg] illegal message, "
+				<< "no field named content.sort";
+		}
 	}
 
 	//get 和 set
@@ -531,6 +541,13 @@ public:
 	}
 	void set_master_id(ecgraph::vertex_t master_id) {
 		m_master_id = master_id;
+	}
+
+	int get_sort() {
+		return m_sort;
+	}
+	void set_sort(int sort) {
+		m_sort = sort;
 	}
 
 	ecgraph::vertex_t get_msg_id() {
@@ -544,6 +561,7 @@ public:
 		//=======填充
 		pt.put("msg_id", std::to_string(m_msg_id));
 		pt.put("content.master_id", std::to_string(m_master_id));
+		pt.put("content.sort", std::to_string(m_sort));
 		//=======
 
 		std::stringstream ss;

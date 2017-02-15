@@ -401,7 +401,7 @@ void worker<update_type>::send_update() {
 	m_end_time = clock();
 	//释放缓存
 	delete [] read_buf;
-	for (int i = 0; i < WORKER_SIZE; i++) {	//为其他计算节点申请缓存空间
+	for (int i = 0; i < WORKER_SIZE; i++) {	//循环释放所有的空间
 		delete[] send_buf[i];
 	}
 	delete[] send_buf;
@@ -778,7 +778,7 @@ inline void worker<update_type>::binay_partition_myself()
 	msg->set_worker_id(m_rank);
 	msg->set_current_loop(m_algorithm->super_step());
 	send_msg_to_one_worker(msg, GRAPH_CONTROLL_TAG, new_worker);
-	LOG_TRIVIAL(info) << "worker(" << m_rank << ") sync step ok";
+	LOG_TRIVIAL(info) << "worker(" << m_rank << ") sync step to worker("<<new_worker<<") ok";
 
 	sync_data_to_worker(new_worker, 
 		m_algorithm->get_local_graph_vertices_offset(mid));
@@ -788,7 +788,7 @@ inline void worker<update_type>::binay_partition_myself()
 	//然后再发一个改变状态的消息，使新的worker的状态和其他worker同步
 	set_one_worker_state(NODE_STATE::BETWEEN_TWO_ITERATION, new_worker);
 	//发完以上消息后，所有的所有的worker就处于BETWEEN_TWO_ITERATION
-	LOG_TRIVIAL(info) << "worker(" << m_rank << ") set new worker BETWEEN_TWO_ITERATION";
+	LOG_TRIVIAL(info) << "worker(" << m_rank << ") set new worker("<<new_worker<<") BETWEEN_TWO_ITERATION";
 
 	//更新自己的分区配置信息
 	my_partition_config.close();
@@ -820,7 +820,8 @@ inline void worker<update_type>::binay_partition_myself()
 
 	//处理本机的degree和result
 	int *degree = m_algorithm->get_degree().data();
-	ecgraph::weight_t *result = m_algorithm->get_result().data();
+	decltype(m_algorithm->get_result_value_type()) 
+		*result = m_algorithm->get_result().data();
 
 	
 	//本地数组的开始和结束
@@ -846,7 +847,8 @@ template<typename update_type>
 inline void worker<update_type>::sync_data_to_worker(int worker_rank, int end)
 {
 	//开始同步degree和result
-	ecgraph::weight_t *result = m_algorithm->get_result().data();
+	decltype(m_algorithm->get_result_value_type()) 
+		*result = m_algorithm->get_result().data();
 	int *degree = m_algorithm->get_degree().data();
 	worker_sync_data_t *datas = new worker_sync_data_t[SEND_BUFFER_SIZE];
 	int length = 0;
@@ -860,7 +862,8 @@ inline void worker<update_type>::sync_data_to_worker(int worker_rank, int end)
 			MPI_Send((void*)datas, length*sizeof(worker_sync_data_t),
 				MPI_BYTE, worker_rank, DATA_SYNC_TAG, MPI_COMM_WORLD);
 			length = 0;
-			//LOG_TRIVIAL(info) << "worker(" << m_rank << ") sync_data_to_worker";
+			LOG_TRIVIAL(info) << "worker(" << m_rank 
+				<< ") sync_data_to_worker length "<<length;
 		}
 	}
 
@@ -887,7 +890,8 @@ inline void worker<update_type>::handle_data_sync(ecgraph::byte_t * buf, int len
 	int sync_data_len = len / sizeof(worker_sync_data_t);
 	int index = 0;
 	int *degree = m_algorithm->get_degree().data();
-	ecgraph::weight_t *result = m_algorithm->get_result().data();
+	decltype(m_algorithm->get_result_value_type()) 
+		*result = m_algorithm->get_result().data();
 	LOG_TRIVIAL(info) << "worker(" << m_rank << ") handle_data_sync";
 	for (int i = 0; i < sync_data_len; i++) {
 		index = sync_data[i].index;
@@ -1324,6 +1328,8 @@ void worker<update_type>::recv()
 						else if (msg_id == MASTER_CHANGE_WORKER_STATE_MSGID) {
 						//可以作为一轮迭代的结束标志
 							//等待结束，释放new出来的变量
+							LOG_TRIVIAL(info) << "worker("
+								<< m_rank << ")[IN_ITERATION] recv change state msg";
 							if (send_thrd->joinable()) {
 								send_thrd->join();
 								delete send_thrd;
@@ -1332,20 +1338,25 @@ void worker<update_type>::recv()
 							if (send_thrd != NULL) {
 								delete send_thrd;
 							}
+
 							//使得图计算程序能结束
 							m_algorithm->setover_in_buffer();
+
+	
 
 							if (graph_thrd->joinable()) {
 								graph_thrd->join();
 								delete graph_thrd;
 								graph_thrd = NULL;
 							}
+							
 							if (graph_thrd != NULL) {
 								delete graph_thrd;
 							}
+
 							m_algorithm->reset_all();
-							/*LOG_TRIVIAL(info) << "worker(" 
-								<< m_rank << ") recv change state msg";*/
+							//LOG_TRIVIAL(info) << "worker(" 
+								//<< m_rank << ")[IN_ITERATION] recv change state msg";
 							
 							master_change_worker_state_msg msg;
 							msg.load(std::string((char *)recv_buf, count));
@@ -1427,6 +1438,8 @@ void worker<update_type>::recv()
 							binay_partition_myself();
 							//LOG_TRIVIAL(info) << "worker("
 							//	<< m_rank << ") binay_partition_myself ok";
+
+							//序列化
 							std::string ring_info = m_ring->save();
 							worker_send_ring_info_msg *msg
 								= new worker_send_ring_info_msg();

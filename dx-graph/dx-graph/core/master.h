@@ -674,7 +674,6 @@ void master::go()
 				LOG_TRIVIAL(info) << "master(" << m_rank
 					<< ") received all run info msg";
 				//对m_run_info的信息进行处理
-				//TODO
 
 
 
@@ -688,7 +687,7 @@ void master::go()
 					}
 					else {
 
-						//处理worker运行信息，并处理。
+						//处理worker运行信息，并决定是否分裂节点
 						process_run_info_and_binary_partition();
 						//继续迭代
 						
@@ -928,11 +927,15 @@ inline void master::process_run_info_and_binary_partition()
 
 		//比较时间差距，如果相差两倍以上就分裂
 		//if (iter_max1->second.runtime > iter_max2->second.runtime) {
-		if(m_run_info.size() ==1  && m_current_loop == 2){//测试用
+		//if(m_run_info.size() ==2  && (m_current_loop == 2
+		if (m_current_loop == 2
+			|| m_current_loop == 3 || m_current_loop == 4 
+			){//测试用
 			//开始发送分裂消息
 			master_binary_partition_worker_msg *msg 
 				= new master_binary_partition_worker_msg();
 			msg->set_master_id(m_rank);
+			msg->set_sort(1);
 			send_msg_to_one_worker(msg, max1);
 
 			
