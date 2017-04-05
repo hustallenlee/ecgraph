@@ -778,17 +778,20 @@ inline void worker<update_type>::binay_partition_myself()
 	msg->set_worker_id(m_rank);
 	msg->set_current_loop(m_algorithm->super_step());
 	send_msg_to_one_worker(msg, GRAPH_CONTROLL_TAG, new_worker);
-	LOG_TRIVIAL(info) << "worker(" << m_rank << ") sync step to worker("<<new_worker<<") ok";
+	LOG_TRIVIAL(info) << "worker(" << m_rank << ") sync step to worker("
+		<<new_worker<<") ok";
 
 	sync_data_to_worker(new_worker, 
 		m_algorithm->get_local_graph_vertices_offset(mid));
-	
+	LOG_TRIVIAL(info) << "worker(" << m_rank << ") mid "<<mid
+			<< " local "<< m_algorithm->get_local_graph_vertices_offset(mid);
 
 
 	//然后再发一个改变状态的消息，使新的worker的状态和其他worker同步
 	set_one_worker_state(NODE_STATE::BETWEEN_TWO_ITERATION, new_worker);
 	//发完以上消息后，所有的所有的worker就处于BETWEEN_TWO_ITERATION
-	LOG_TRIVIAL(info) << "worker(" << m_rank << ") set new worker("<<new_worker<<") BETWEEN_TWO_ITERATION";
+	LOG_TRIVIAL(info) << "worker(" << m_rank << ") set new worker("
+		<<new_worker<<") BETWEEN_TWO_ITERATION";
 
 	//更新自己的分区配置信息
 	my_partition_config.close();
@@ -838,6 +841,7 @@ inline void worker<update_type>::binay_partition_myself()
 		<<"size "<< m_algorithm->get_degree().size();*/
 	delete[] send_buf[0];
 	delete[] send_buf[1];
+	my_sleep(1);
 	//========================================================================
 }
 
@@ -862,8 +866,6 @@ inline void worker<update_type>::sync_data_to_worker(int worker_rank, int end)
 			MPI_Send((void*)datas, length*sizeof(worker_sync_data_t),
 				MPI_BYTE, worker_rank, DATA_SYNC_TAG, MPI_COMM_WORLD);
 			length = 0;
-			LOG_TRIVIAL(info) << "worker(" << m_rank 
-				<< ") sync_data_to_worker length "<<length;
 		}
 	}
 
@@ -892,7 +894,8 @@ inline void worker<update_type>::handle_data_sync(ecgraph::byte_t * buf, int len
 	int *degree = m_algorithm->get_degree().data();
 	decltype(m_algorithm->get_result_value_type()) 
 		*result = m_algorithm->get_result().data();
-	LOG_TRIVIAL(info) << "worker(" << m_rank << ") handle_data_sync";
+	LOG_TRIVIAL(info) << "worker(" << m_rank << ") handle_data_sync"
+					<<" len "<<sync_data_len;
 	for (int i = 0; i < sync_data_len; i++) {
 		index = sync_data[i].index;
 		degree[index] = sync_data[i].degree;
