@@ -17,7 +17,7 @@ Run the make command
 
 `make`
 
-Then the execute file will be generated in the bin/ path
+Then the execute file will be generated in the `bin/` path
 
 
 ## Before run
