@@ -28,7 +28,7 @@ for convenience, you should use nfs as a shared directory in MPI cluster so that
 
 ## Run
 Because every node in mpi cluster would run the same execute file, so you shuold have the same path in every node.
-For example, if your graph data was put in a local path `/home/YOUR_USR_NAME/datasets` on `192.168.3.122`, then you should create the same path on the other machines.
+For example, if your graph data was put in a local path `/home/YOUR_USER_NAME/datasets` on `192.168.3.122`, then you should create the same path on the other machines.
 
 `mpiexec -f machinefile ./bin/algorithm graph_data iterations`
 
