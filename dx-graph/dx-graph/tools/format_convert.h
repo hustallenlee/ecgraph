@@ -23,10 +23,12 @@
 #include <sstream>
 #include <map>
 #include <utility>
-#include "../utils/types.h"
-#include "../utils/log_wrapper.h"
-#include "../utils/type_utils.h"
-namespace format {
+#include <algorithm>
+#include "utils/types.h"
+#include "utils/log_wrapper.h"
+#include "utils/type_utils.h"
+
+namespace ecgraph {
 	class format_convert {
 	private:
 		std::string filename;
@@ -34,8 +36,10 @@ namespace format {
 		std::ofstream type_file;
 		std::ofstream map_file;
 		std::ofstream config_file;
-		int vertex_num;
-		long edge_num;
+		vertex_t vertex_num;
+        //vertex_t min_vertex_id;
+        //vertex_t max_vertex_id;
+		long long edge_num;
 	public:
 		format_convert(std::string fn):filename(fn){
 			snap_file.open(filename, std::ios::in);
@@ -54,6 +58,8 @@ namespace format {
 			map_file << "#after before" << std::endl;
 			vertex_num = 0;
 			edge_num = 0;
+            //min_vertex_id = ecgraph::VERTEX_MAX;
+            //max_vertex_id = ecgraph::VERTEX_MIN;
 
 		}
 		~format_convert(){
@@ -65,17 +71,23 @@ namespace format {
 		}
 		
 		void write_config(){
-			config_file << "#type\tname\tvertices\tedges\n";
+			config_file << "#type\tname\tvertices\tedges\tmin_vertex_id\tmax_vertex_id\n";
 			#ifdef COMPACT_GRAPH
-			config_file << "1" <<" "
-						<<filename+".bin"<<" "
-						<<vertex_num<<" "
-						<<edge_num<<std::endl;
+			config_file << "1" <<"\t"
+						<<filename+".bin"<<"\t"
+						<<vertex_num<<"\t"
+						<<edge_num<<"\t"
+                        //<<min_vertex_id<<"\t"
+                        //<<max_vertex_id<<"\t"
+                        <<std::endl;
 			#else
-			config_file << "2" <<" "
-						<<filename+"_noncompact.bin"<<" "
-						<<vertex_num<<" "
-						<<edge_num<<std::endl;
+			config_file << "2" <<"\t"
+						<<filename+"_noncompact.bin"<<"\t"
+						<<vertex_num<<"\t"
+						<<edge_num<<"\t"
+                        //<<min_vertex_id<<"\t"
+                        //<<max_vertex_id<<"\t"
+                        <<std::endl;
 			#endif
 		}
 
@@ -84,7 +96,7 @@ namespace format {
 			if (! snap_file){
 				LOG_TRIVIAL(error) << "no file is opened";
 			}
-			format::edge_t edge;
+			ecgraph::edge_t edge;
 			std::map<vertex_t, vertex_t> mapper;
 			vertex_t i=0;
 			std::cout << sizeof(edge) <<std::endl;
@@ -96,14 +108,14 @@ namespace format {
 				edge.value = generate_weight();
 				#endif
 				
-				auto map_ins = mapper.insert( std::pair <vertex_t, vertex_t>(edge.src, i));
+				auto map_ins = mapper.insert( std::pair <vertex_t, vertex_t>(edge.src, i));//转换
 				if (map_ins.second == true){
 					map_file << i <<" " << edge.src << std::endl;
 					edge.src = i;
 					i++;
 				}
 				else{
-					edge.src = map_ins.first->second;
+					edge.src = map_ins.first->second;//map_ins.first代表这个关键字的迭代器
 				}
 				
 				map_ins = mapper.insert( std::pair <vertex_t, vertex_t>(edge.dst, i));
@@ -111,11 +123,11 @@ namespace format {
 					map_file << i <<" " << edge.dst << std::endl;
 					edge.dst = i;
 					i++;
-				
+			    }	
 				else{
 					edge.dst = map_ins.first->second;
 				}
-				type_file.write( (char *) (&edge), sizeof(format::edge_t));
+				type_file.write( (char *) (&edge), sizeof(ecgraph::edge_t));//write(const unsigned char *buf,int num); write() 从buf 指向的缓存写 num 个字符到文件中，值得注意的是缓存的类型是 unsigned char *，有时可能需要类型转换
 				edge_num ++;
 			}
 			vertex_num = i;
@@ -132,5 +144,4 @@ namespace format {
 
 	};
 }
-
 #endif
