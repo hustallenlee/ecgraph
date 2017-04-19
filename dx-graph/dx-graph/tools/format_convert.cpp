@@ -14,7 +14,7 @@ int main(int argc, char *argv[]){
 	//#endif
 	std::string s1(argv[1]);
 	//std::string s2(argv[2]);
-	format::format_convert fc(s1);
+	ecgraph::format_convert fc(s1);
 	fc.to_type();
 	return 0;
 }
