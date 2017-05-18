@@ -21,14 +21,14 @@ Then the execute file will be generated in the `bin/` path
 
 
 ## Before run
-Before you run the program, you should first convert the text graph data to binary graph using our tool, and also, in the mpi cluster, one machine should can connect other machines using ssh without password. 
+Before you run the program, you should first convert the text graph data to binary graph using our tool, and also, in the mpi cluster, one machine can connect other machines using ssh without password. 
 
 for convenience, you should use nfs as a shared directory in MPI cluster so that you can put the source and its dependency into the shared directory, and when you compile the source, you can just compile once and run on the anyone of the cluster. 
 
 
 ## Run
 Because every node in mpi cluster would run the same execute file, so you shuold have the same path in every node.
-For example, if your graph data was put in a local path `/home/YOUR_USER_NAME/datasets` on `192.168.3.122`, then you should create the same path on the other machines.
+For example, if your graph data was put in a local path `/home/YOUR_USER_NAME/datasets` on `192.168.3.122`, then you should create the same path on the other machines, and you should put your machine file(mpi needs machine file) in every path on the machines.
 
 `mpiexec -f machinefile ./bin/algorithm graph_data iterations`
 
